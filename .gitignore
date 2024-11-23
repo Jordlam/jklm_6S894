@@ -4,3 +4,8 @@
 *.ptx
 *.cubin
 *.fatbin
+*.DS_Store
+
+build/
+build.tar
+telerun-out/
