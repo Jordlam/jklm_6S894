@@ -57,7 +57,7 @@ run_devctr() {
 build_devctr() {
     echo "Building development container..."
     docker_file_name=$DEVCTR_DIR/Dockerfile
-    docker build -t "$DEVCTR_IMAGE" -f "$docker_file_name" .
+    docker build --platform "linux/amd64" -t "$DEVCTR_IMAGE" -f "$docker_file_name" .
 
     # echo "Pushing development container into " ${DEVCTR_IMAGE}
     # docker push ${DEVCTR_IMAGE}

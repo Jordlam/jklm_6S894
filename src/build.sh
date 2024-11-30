@@ -18,3 +18,6 @@ nvcc -O3 vector_add.cu -o ${CTR_BUILD_DIR}/vector_add
 # Copy JAX and torch tests.
 cp jax_test.py ${CTR_BUILD_DIR}/
 cp torch_test.py ${CTR_BUILD_DIR}/
+
+# Other files
+cp arch_test.py ${CTR_BUILD_DIR}/

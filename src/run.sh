@@ -22,3 +22,7 @@ python3 jax_test.py
 # Run torch tests.
 echo -e "torch tests...\n"
 python3 torch_test.py
+
+# Run other files.
+echo -e "\n"
+python3 arch_test.py
