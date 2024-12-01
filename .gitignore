@@ -5,7 +5,12 @@
 *.cubin
 *.fatbin
 *.DS_Store
+*.vscode
 
 build/
 build.tar
 telerun-out/
+
+*ufbx/
+*tinyobjloader/
+*stb/

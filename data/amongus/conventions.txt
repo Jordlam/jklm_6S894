@@ -1,4 +1,0 @@
-Conventions as exported from Blender:
-
-Forward: -Z Forward
-Up: Y Up

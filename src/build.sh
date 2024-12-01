@@ -21,3 +21,8 @@ cp torch_test.py ${CTR_BUILD_DIR}/
 
 # Other files
 cp arch_test.py ${CTR_BUILD_DIR}/
+
+cp -r data/ ${CTR_BUILD_DIR}/
+cp -r include/ ${CTR_BUILD_DIR}/
+nvcc -O3 obj_loader.cpp -o ${CTR_BUILD_DIR}/obj_loader
+g++ -o ${CTR_BUILD_DIR}/fbx_loader fbx_loader.cpp include/ufbx.c -I${CTR_BUILD_DIR}/include

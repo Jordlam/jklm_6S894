@@ -26,3 +26,9 @@ python3 torch_test.py
 # Run other files.
 echo -e "\n"
 python3 arch_test.py
+
+echo -e "Running obj loaders...\n"
+./obj_loader
+
+echo -e "Running camera, light loaders...\n"
+./fbx_loader
