@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 // #include <cuda_runtime.h>
 #include <iostream>
+#include <limits>
 
 #include "model.h"
 #include "tgaimage.h"
@@ -28,6 +30,8 @@ struct Point3D {
     float y;
     float z;
 
+    // Point3D() : x(0.0f), y(0.0f), z(0.0f) {}  // QUESTION: Why does this cause errors?
+
     Point3D operator+(Point3D p) {
         return {x + p.x, y + p.y, z + p.z};
     }
@@ -36,28 +40,68 @@ struct Point3D {
         return {x - p.x, y - p.y, z - p.z};
     }
 
+    Point3D cross(Point3D p) {
+        return {y * p.z - z * p.y, z * p.x - x * p.z, x * p.y  - y  * p.x};
+    }
+
     float dot(Point3D p) {
         return x * p.x + y * p.y + z * p.z;
     }
+    
+    float magnitude() {
+        return sqrt(x * x + y * y + z * z);
+    }
+
+    Point3D normalize() {
+        float magnitude_reciprocal = 1 / magnitude();
+        
+        return {
+            x * magnitude_reciprocal,
+            y * magnitude_reciprocal, 
+            z * magnitude_reciprocal
+        };
+    }
 };
 
+template<typename Point>
 struct Triangle {
-    Point2D a;
-    Point2D b;
-    Point2D c;
+    Point a;
+    Point b;
+    Point c;
 
-    Triangle(
-        Point2D _a,
-        Point2D _b,
-        Point2D _c
+    Triangle<Point>(
+        Point _a,
+        Point _b,
+        Point _c
     ) :
         a(_a), b(_b), c(_c)
     {}
+
+    Point normal();
 };
+
+using Triangle2D = Triangle<Point2D>;
+using Triangle3D = Triangle<Point3D>;
+
+// `normal` only makes sense for `Triangle3D`.
+template<>
+Point3D Triangle3D::normal() {
+
+    // Must be in this order (i.e., using `b` as our point of reference),
+    // presumably because the cross product is not commutative, and the
+    // other orders cause issues.
+    Point3D u = a - b;
+    Point3D v = c - b;
+    
+    // Point3D u = a - c;
+    // Point3D v = b - c;
+
+    return u.cross(v).normalize();
+}
 
 // Returns bounding box of `triangle`, with exclusive ends.
 std::array<int, 4> bounding_box(
-    Triangle triangle,
+    Triangle2D triangle,
     int image_width,
     int image_height
 ) {
@@ -73,7 +117,7 @@ std::array<int, 4> bounding_box(
     return {lowest_x, highest_x, lowest_y + 1, highest_y + 1};
 }
 
-bool point_inside_triangle(Triangle triangle, Point2D point) {
+bool point_inside_triangle(Triangle2D triangle, Point2D point) {
     // Calculate barycentric coordinates using code adapted
     // from this page: https://blackpawn.com/texts/pointinpoly/
 
@@ -95,46 +139,75 @@ bool point_inside_triangle(Triangle triangle, Point2D point) {
     return (u >= 0) && (v >= 0) && (u + v < 1);
 }
 
+template<int IMAGE_WIDTH = 2000, int IMAGE_HEIGHT = 2000>
 void draw_triangle(
-    Triangle triangle,
+    Triangle2D triangle,
+    TGAColor color,
     TGAImage &image,
-    int image_width,
-    int image_height
+    std::vector<int> max_pixel_z
 ) {
     // Exclusive ends.
-    auto [start_x, end_x, start_y, end_y] = bounding_box(triangle, image_width, image_height);
-    static uint8_t rand = 0;
-    rand ^= 1;
+    auto [start_x, end_x, start_y, end_y] = bounding_box(triangle, IMAGE_WIDTH, IMAGE_HEIGHT);
     for (int y = start_y; y < end_y; ++y) {
         for (int x = start_x; x < end_x; ++x) {
             Point2D point = {x, y};
             if (point_inside_triangle(triangle, point)) {
-                TGAColor red = TGAColor(255, 0, 0, 255);
-                TGAColor white = TGAColor(255, 255, 255, 255);
-                image.set(x, y, rand ? red : white);
+                image.set(x, y, color); 
             }
         }
     }
 }
 
 int main(int argc, char** argv) {
-    int frame_width = 200;
-    int frame_height = 200;
-    TGAImage frame(frame_width, frame_height, TGAImage::RGB);
+    constexpr int FRAME_WIDTH = 2500;
+    constexpr int FRAME_HEIGHT = 2500;
+    std::vector<int> max_pixel_z(FRAME_WIDTH * FRAME_HEIGHT, std::numeric_limits<int>::min());
+
+    TGAImage frame(FRAME_WIDTH, FRAME_HEIGHT, TGAImage::RGB);
 
     Model model("head.obj");
+    Point3D light_direction({0.0, 0.0, -1.0});
 
     for (int t = 0; t < model.nfaces(); ++t) {
-        std::array<Point2D, 3> triangle_vertices;
+        std::array<Point3D, 3> world_triangle_vertices;
+        std::array<Point2D, 3> screen_triangle_vertices;
         for (int v = 0; v < 3; ++v) {
-            auto [x, y, _] = model.vert(t, v);
-            int screen_x = std::floor((x + 1.0) * static_cast<double>(frame_width) / 2.0);
-            int screen_y = std::floor((y + 1.0) * static_cast<double>(frame_height) / 2.0);
-            triangle_vertices[v] = {screen_x, screen_y};
+            auto [world_x, world_y, world_z] = model.vert(t, v);
+            world_triangle_vertices[v] = Point3D({
+                static_cast<float>(world_x),
+                static_cast<float>(world_y),
+                static_cast<float>(world_z)
+            });
+
+            int screen_x = (world_x + 1.0) * static_cast<double>(FRAME_WIDTH) / 2.0;
+            int screen_y = (world_y + 1.0) * static_cast<double>(FRAME_HEIGHT) / 2.0;
+            screen_triangle_vertices[v] = Point2D({screen_x, screen_y});
         }
-        
-        Triangle triangle(triangle_vertices[0], triangle_vertices[1], triangle_vertices[2]);
-        draw_triangle(triangle, frame, frame_width, frame_height);
+
+        Triangle2D screen_triangle(
+            screen_triangle_vertices[0],
+            screen_triangle_vertices[1],
+            screen_triangle_vertices[2]
+        );
+
+        Triangle3D world_triangle(
+            world_triangle_vertices[0],
+            world_triangle_vertices[1],
+            world_triangle_vertices[2]
+        );
+
+        Point3D norm = world_triangle.normal();
+        float light_intensity = norm.dot(light_direction);
+        if (light_intensity > 0) {
+            TGAColor color(
+                255 * light_intensity,
+                255 * light_intensity,
+                255 * light_intensity,
+                255
+            );
+
+            draw_triangle<FRAME_WIDTH, FRAME_HEIGHT>(screen_triangle, color, frame, max_pixel_z);
+        }
     }
 
     // Triangle triangle({10, 10}, {100, 30}, {190, 160});
