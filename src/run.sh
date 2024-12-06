@@ -11,24 +11,18 @@
 # We can see what's on the execution server in the home dir:
 echo "Content:"; ls
 
-# Run binary.
+# Run tests.
+# echo -e "JAX tests...\n"
+# python3 jax_test.py
+# echo -e "torch tests...\n"
+# python3 torch_test.py
+# echo -e "\n"
+# python3 arch_test.py
 echo -e "\nCUDA tests..."
 ./vector_add
 
-# Run JAX tests.
-echo -e "JAX tests...\n"
-python3 jax_test.py
-
-# Run torch tests.
-echo -e "torch tests...\n"
-python3 torch_test.py
-
-# Run other files.
-echo -e "\n"
-python3 arch_test.py
-
+# Run other files
 echo -e "Running obj loaders...\n"
 ./obj_loader
-
 echo -e "Running camera, light loaders...\n"
 ./fbx_loader
