@@ -117,10 +117,9 @@ std::array<int, 4> bounding_box(
     return {lowest_x, highest_x, lowest_y + 1, highest_y + 1};
 }
 
-bool point_inside_triangle(Triangle2D triangle, Point2D point) {
-    // Calculate barycentric coordinates using code adapted
-    // from this page: https://blackpawn.com/texts/pointinpoly/
-
+// Returns barycentric coordinates for vertex c and b, respectively.
+// Uses code adapted from this page: https://blackpawn.com/texts/pointinpoly/
+std::array<float, 2> barycentric_coordinates(Triangle2D triangle, Point2D point) {
     Point2D v0 = triangle.c - triangle.a;
     Point2D v1 = triangle.b - triangle.a;
     Point2D v2 = point - triangle.a;
@@ -131,12 +130,42 @@ bool point_inside_triangle(Triangle2D triangle, Point2D point) {
     int dot11 = v1.dot(v1);
     int dot12 = v1.dot(v2);
 
-    double invDenom = 1.0 / static_cast<double>(dot00  * dot11 - dot01  * dot01);
-    double u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-    double v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+    float invDenom = 1.0 / static_cast<float>(dot00  * dot11 - dot01  * dot01);
+    float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+    float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+
+    return {u, v};
+}
+
+bool point_inside_triangle(Triangle2D triangle, Point2D point) {
+    auto [u, v] = barycentric_coordinates(triangle, point);
 
     // Determine whether the point is in the triangle.
     return (u >= 0) && (v >= 0) && (u + v <= 1);
+}
+
+bool pixel_visible_update(
+    Triangle2D triangle,
+    Point2D point,
+    std::array<float, 3> triangle_z_coords,
+    std::vector<float>& max_pixel_z,
+    int image_width
+) {
+    auto [bary_c, bary_b] = barycentric_coordinates(triangle, point);
+    std::array<decltype(bary_c), 3> barycentric_coord = {1 - bary_c - bary_b, bary_b, bary_c};
+
+    float pixel_z_value = 0;
+    for (int i = 0; i < 3; ++i) {
+        pixel_z_value += static_cast<float>(barycentric_coord[i] * triangle_z_coords[i]);
+    }
+
+    bool pixel_is_visible = pixel_z_value > max_pixel_z[point.y * image_width + point.x];
+    
+    if (pixel_is_visible) {
+        max_pixel_z[point.y * image_width + point.x] = pixel_z_value;
+    }
+    
+    return pixel_is_visible;
 }
 
 template<int IMAGE_WIDTH = 2000, int IMAGE_HEIGHT = 2000>
@@ -144,16 +173,26 @@ void draw_triangle(
     Triangle2D triangle,
     TGAColor color,
     TGAImage &image,
-    std::vector<int>& max_pixel_z
+    std::vector<float>& max_pixel_z,
+    std::array<float, 3> triangle_z_coords
 ) {
     // Exclusive ends.
     auto [start_x, end_x, start_y, end_y] = bounding_box(triangle, IMAGE_WIDTH, IMAGE_HEIGHT);
     for (int y = start_y; y < end_y; ++y) {
         for (int x = start_x; x < end_x; ++x) {
             Point2D point = {x, y};
-            if (point_inside_triangle(triangle, point)) {
-                image.set(x, y, color); 
-            }
+
+            if (
+                point_inside_triangle(triangle, point)
+                && pixel_visible_update(
+                    triangle,
+                    point,
+                    triangle_z_coords,
+                    max_pixel_z,
+                    IMAGE_WIDTH)
+            ) {
+                image.set(x, y, color);
+            } 
         }
     }
 }
@@ -166,11 +205,12 @@ int main(int argc, char** argv) {
     Model model("head.obj");
     // Model model("amongus_triangles.obj");
     Point3D light_direction({0.0, 0.0, -1.0});
-    std::vector<int> max_pixel_z(FRAME_WIDTH * FRAME_HEIGHT, std::numeric_limits<int>::min());
-
+    std::vector<float> max_pixel_z(FRAME_WIDTH * FRAME_HEIGHT, std::numeric_limits<float>::lowest());
+    
     for (int t = 0; t < model.nfaces(); ++t) {
         std::array<Point3D, 3> world_triangle_vertices;
         std::array<Point2D, 3> screen_triangle_vertices;
+        std::array<float, 3> z_coords;
         for (int v = 0; v < 3; ++v) {
             auto [world_x, world_y, world_z] = model.vert(t, v);
             world_triangle_vertices[v] = Point3D({
@@ -182,6 +222,8 @@ int main(int argc, char** argv) {
             int screen_x = (world_x + 1.0) * static_cast<double>(FRAME_WIDTH) / 2.0;
             int screen_y = (world_y + 1.0) * static_cast<double>(FRAME_HEIGHT) / 2.0;
             screen_triangle_vertices[v] = Point2D({screen_x, screen_y});
+
+            z_coords[v] = static_cast<float>(world_z);
         }
 
         Triangle2D screen_triangle(
@@ -206,7 +248,7 @@ int main(int argc, char** argv) {
                 255
             );
 
-            draw_triangle<FRAME_WIDTH, FRAME_HEIGHT>(screen_triangle, color, frame, max_pixel_z);
+            draw_triangle<FRAME_WIDTH, FRAME_HEIGHT>(screen_triangle, color, frame, max_pixel_z, z_coords);
         } 
     }
 
