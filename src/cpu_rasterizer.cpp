@@ -136,7 +136,7 @@ bool point_inside_triangle(Triangle2D triangle, Point2D point) {
     double v = (dot00 * dot12 - dot01 * dot02) * invDenom;
 
     // Determine whether the point is in the triangle.
-    return (u >= 0) && (v >= 0) && (u + v < 1);
+    return (u >= 0) && (v >= 0) && (u + v <= 1);
 }
 
 template<int IMAGE_WIDTH = 2000, int IMAGE_HEIGHT = 2000>
@@ -144,7 +144,7 @@ void draw_triangle(
     Triangle2D triangle,
     TGAColor color,
     TGAImage &image,
-    std::vector<int> max_pixel_z
+    std::vector<int>& max_pixel_z
 ) {
     // Exclusive ends.
     auto [start_x, end_x, start_y, end_y] = bounding_box(triangle, IMAGE_WIDTH, IMAGE_HEIGHT);
@@ -159,14 +159,14 @@ void draw_triangle(
 }
 
 int main(int argc, char** argv) {
-    constexpr int FRAME_WIDTH = 2500;
-    constexpr int FRAME_HEIGHT = 2500;
-    std::vector<int> max_pixel_z(FRAME_WIDTH * FRAME_HEIGHT, std::numeric_limits<int>::min());
-
+    constexpr int FRAME_WIDTH = 3500;
+    constexpr int FRAME_HEIGHT = FRAME_WIDTH;
     TGAImage frame(FRAME_WIDTH, FRAME_HEIGHT, TGAImage::RGB);
 
     Model model("head.obj");
+    // Model model("amongus_triangles.obj");
     Point3D light_direction({0.0, 0.0, -1.0});
+    std::vector<int> max_pixel_z(FRAME_WIDTH * FRAME_HEIGHT, std::numeric_limits<int>::min());
 
     for (int t = 0; t < model.nfaces(); ++t) {
         std::array<Point3D, 3> world_triangle_vertices;
@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
             );
 
             draw_triangle<FRAME_WIDTH, FRAME_HEIGHT>(screen_triangle, color, frame, max_pixel_z);
-        }
+        } 
     }
 
     // Triangle triangle({10, 10}, {100, 30}, {190, 160});
