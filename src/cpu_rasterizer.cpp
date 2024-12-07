@@ -8,8 +8,8 @@
 #include "model.h"
 #include "tgaimage.h"
 
-template<int NUM_ROWS, int NUM_COLS>
-class Matrix;
+// template<int NUM_ROWS, int NUM_COLS>
+// class Matrix;
 
 struct Point2D {
     int x;
@@ -107,61 +107,61 @@ Point3D Triangle3D::normal() {
     return u.cross(v).normalize();
 }
 
-template<int NUM_ROWS = 4, int NUM_COLS = 4>
-class Matrix {
-  private:
-    float data[NUM_ROWS][NUM_COLS];
-    int rows = NUM_ROWS;
-    int cols = NUM_COLS;
+// template<int NUM_ROWS = 4, int NUM_COLS = 4>
+// class Matrix {
+//   private:
+//     float data[NUM_ROWS][NUM_COLS];
+//     int rows = NUM_ROWS;
+//     int cols = NUM_COLS;
 
-  public:
-    Matrix() : data{{0}} {}
+//   public:
+//     Matrix() : data{{0}} {}
 
-    Matrix(Point3D point) {
-        Matrix<4, 1> m;
-        m[0][0] = point.x;
-        m[1][0] = point.y;
-        m[2][0] = point.z;
-        m[3][0] = 1.0f;
-    }
+//     Matrix(Point3D point) {
+//         Matrix<4, 1> m;
+//         m[0][0] = point.x;
+//         m[1][0] = point.y;
+//         m[2][0] = point.z;
+//         m[3][0] = 1.0f;
+//     }
 
-    static Matrix identity() {
-        assert(NUM_ROWS == NUM_COLS);
+//     static Matrix identity() {
+//         assert(NUM_ROWS == NUM_COLS);
 
-        Matrix id;
-        for (int i = 0; i < NUM_ROWS; ++i) {
-            id[i][i] = 1.0;
-        }
+//         Matrix id;
+//         for (int i = 0; i < NUM_ROWS; ++i) {
+//             id[i][i] = 1.0;
+//         }
 
-        return id;
-    }
+//         return id;
+//     }
 
-    float* operator[](int i) {
-        return data[i];
-    }
+//     float* operator[](int i) {
+//         return data[i];
+//     }
 
-    Matrix operator*(Matrix b) {
-        assert(cols == b.rows);
+//     Matrix operator*(Matrix b) {
+//         assert(cols == b.rows);
 
-        Matrix c;
-        for (int i = 0; i < rows; ++i) {
-            for (int j = 0; j < b.cols; ++i) {
-                float sum = 0;
-                for (int k = 0; k < cols; ++k) {
-                    sum += data[i][k] * b[j][k];
-                }
+//         Matrix c;
+//         for (int i = 0; i < rows; ++i) {
+//             for (int j = 0; j < b.cols; ++i) {
+//                 float sum = 0;
+//                 for (int k = 0; k < cols; ++k) {
+//                     sum += data[i][k] * b[j][k];
+//                 }
 
-                c[i][j] = sum;
-            }
-        }
+//                 c[i][j] = sum;
+//             }
+//         }
 
-        return c;
-    }
-};
+//         return c;
+//     }
+// };
 
-Point3D matrix_to_point(Matrix<4, 1> m) {
-    return  {m[0][0] / m[3][0], m[1][0] / m[3][0], m[2][0] / m[3][0]};
-}
+// Point3D matrix_to_point(Matrix<4, 1> m) {
+//     return  {m[0][0] / m[3][0], m[1][0] / m[3][0], m[2][0] / m[3][0]};
+// }
 
 // Returns bounding box of `triangle`, with exclusive ends.
 std::array<int, 4> bounding_box(
@@ -266,25 +266,15 @@ int main(int argc, char** argv) {
     constexpr int FRAME_HEIGHT = FRAME_WIDTH;
     TGAImage frame(FRAME_WIDTH, FRAME_HEIGHT, TGAImage::RGB);
 
-    Point3D camera({0.0, 0.0, 3.0});
+    // Point3D camera({0.0, 0.0, 3.0});
     Model model("head.obj");
     // Model model("amongus_triangles.obj");
     Point3D light_direction({0.0, 0.0, -1.0});
     std::vector<float> max_pixel_z(FRAME_WIDTH * FRAME_HEIGHT, std::numeric_limits<float>::lowest());
 
 
-    Matrix<4, 4> projection = Matrix<4, 4>::identity();
-    for (int i = 0; i < 4; ++i) {
-        // printf(
-        //     "Here123: %f, %f, %f, %f\n",
-        //     projection[i][0],
-        //     projection[i][1],
-        //     projection[i][2],
-        //     projection[i][3]
-        // );
-        projection[i][i] = 1.0;
-    }
-    projection[3][2] = -1.0f / camera.z;
+    // Matrix<4, 4> projection = Matrix<4, 4>::identity();
+    // projection[3][2] = -1.0f / camera.z;
 
     for (int t = 0; t < model.nfaces(); ++t) {
         std::array<Point3D, 3> world_triangle_vertices;
