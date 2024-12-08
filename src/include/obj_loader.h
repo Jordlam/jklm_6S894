@@ -18,6 +18,6 @@ public:
 };
 
 // Don't use but for example:
-void loadModel(const std::string &obj_file, const std::string &mtl_path=std::string(""));
+// bool WriteObj(const std::string& filename, const tinyobj::attrib_t& attributes, const std::vector<tinyobj::shape_t>& shapes, const std::vector<tinyobj::material_t>& materials, bool coordTransform);
 
 #endif
