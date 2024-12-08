@@ -22,6 +22,13 @@ nvcc -O3 vector_add.cu -o ${CTR_BUILD_DIR}/vector_add
 
 # Other files
 cp -r data/ ${CTR_BUILD_DIR}/
-cp -r include/ ${CTR_BUILD_DIR}/
-nvcc -O3 obj_loader.cpp -o ${CTR_BUILD_DIR}/obj_loader
-g++ -o ${CTR_BUILD_DIR}/fbx_loader fbx_loader.cpp include/ufbx.c -I${CTR_BUILD_DIR}/include
+
+# Build helpers
+HELPER_DIR=include/
+g++ -O3 -c -o ${CTR_BUILD_DIR}/ufbx.o ${HELPER_DIR}ufbx.c
+g++ -O3 -c -o ${CTR_BUILD_DIR}/fbx_loader.o ${HELPER_DIR}fbx_loader.cpp
+g++ -O3 -c -o ${CTR_BUILD_DIR}/obj_loader.o ${HELPER_DIR}obj_loader.cpp
+g++ -O3 -c -o ${CTR_BUILD_DIR}/tgaimage.o ${HELPER_DIR}tgaimage.cpp
+
+# Main files
+g++ -O3 -o ${CTR_BUILD_DIR}/cpu_rasterizer cpu_rasterizer.cpp ${CTR_BUILD_DIR}/ufbx.o ${CTR_BUILD_DIR}/fbx_loader.o ${CTR_BUILD_DIR}/obj_loader.o ${CTR_BUILD_DIR}/tgaimage.o

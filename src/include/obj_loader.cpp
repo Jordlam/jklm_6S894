@@ -1,18 +1,56 @@
+#include "obj_loader.h"
 #define TINYOBJLOADER_IMPLEMENTATION
-#include "include/tiny_obj_loader.h"
 #define STB_IMAGE_IMPLEMENTATION
-#include "include/stb_image.h"
+#include "tiny_obj_loader.h"
+#include "stb_image.h"
 
-#include <vector>
+void Model::loadModel(const std::string &obj_file, const std::string &mtl_path) {
+    std::string warn;
+    std::string err;
+    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, obj_file.c_str(), mtl_path.c_str(), 0, 0);
 
-void loadModel(const std::string &obj_file, const std::string &mtl_file) {
+    if (!warn.empty()) {
+        printf("Warning: %s\n", warn.c_str());
+    }
+    if (!err.empty()) {
+        printf("Error: %s\n", err.c_str());
+    }
+    if (!ret) {
+        printf("Error loading OBJ file:\n");
+        return;
+    }
+    printf("We parsed %li vertices...\n", attrib.vertices.size());
+    printf("We parsed %li normals...\n", attrib.normals.size());
+    printf("We parsed %li texcoords...\n", attrib.texcoords.size());
+    printf("We parsed %li faces...\n", nfaces(0));
+    printf("We parsed %li materials...\n", materials.size());
+    printf("Example...\n");
+    std::vector<float> vertices = vert(0, 0, 0);
+    float world_x = vertices[0];
+    float world_y = vertices[1];
+    float world_z = vertices[2];
+    printf("Coordinates %f, %f, %f\n", world_x, world_y, world_z);
+}
+size_t Model::nfaces(int i) {
+    return shapes[i].mesh.indices.size();
+}
+std::vector<float> Model::vert(int i, int t, int v) {
+    tinyobj::index_t idx = shapes[i].mesh.indices[t + v];
+    int vertex_index = idx.vertex_index;
+    float v_x = attrib.vertices[3 * vertex_index + 0];
+    float v_y = attrib.vertices[3 * vertex_index + 1];
+    float v_z = attrib.vertices[3 * vertex_index + 2];
+    return {v_x, v_y, v_z};
+}
+
+void loadModel(const std::string &obj_file, const std::string &mtl_path) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
 
     std::string warn;
     std::string err;
-    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, obj_file.c_str(), mtl_file.c_str(), 0, 0);
+    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, obj_file.c_str(), mtl_path.c_str(), 0, 0);
 
     if (!warn.empty()) {
         printf("Warning: %s\n", warn.c_str());
@@ -103,11 +141,4 @@ void loadModel(const std::string &obj_file, const std::string &mtl_file) {
             index_offset += num_vertices;
         }
     }
-}
-
-int main() {
-    std::string obj_file = "data/amongus_triangles.obj";
-    std::string mtl_path = "data";
-    loadModel(obj_file, mtl_path);
-    return 0;
 }

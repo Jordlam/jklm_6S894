@@ -1,5 +1,4 @@
-#include "include/ufbx.h"
-#include <string>
+#include "fbx_loader.h"
 
 void loadFBX(const std::string &fbx_file) {
     ufbx_load_opts opts = {0};
@@ -54,10 +53,4 @@ void loadFBX(const std::string &fbx_file) {
 
     // Clean up
     ufbx_free_scene(scene);
-}
-
-int main() {
-    std::string fbx_file = "data/views.fbx";
-    loadFBX(fbx_file);
-    return 0;
 }

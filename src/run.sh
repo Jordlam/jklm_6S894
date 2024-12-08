@@ -22,7 +22,5 @@ echo -e "\nCUDA tests..."
 ./vector_add
 
 # Run other files
-echo -e "Running obj loaders...\n"
-./obj_loader
-echo -e "Running camera, light loaders...\n"
-./fbx_loader
+echo -e "Running rasterizer...\n"
+./cpu_rasterizer
