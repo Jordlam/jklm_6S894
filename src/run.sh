@@ -23,4 +23,4 @@ echo -e "\nCUDA tests..."
 
 # Run other files
 echo -e "Running rasterizer...\n"
-./cpu_rasterizer
+./main

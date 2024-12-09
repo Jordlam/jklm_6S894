@@ -46,4 +46,7 @@ struct Triangle {
     Point normal();
 };
 
+// Main render
+int cpu_render();
+
 #endif

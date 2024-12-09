@@ -26,7 +26,7 @@ void Scene::loadFBX(const std::string &fbx_file) {
     lights = parsed_lights;
 
     // TODO Some tests
-    ufbx_vec2 cam_size = get_camera(0).camera->orthographic_size;
+    ufbx_vec2 cam_size = get_camera(0).camera->resolution;
     ufbx_vec3 cam_pos = get_camera(0).local_transform.translation;
     ufbx_vec3 light_dir = get_light(0).light->local_direction;
     printf("Example...\n");

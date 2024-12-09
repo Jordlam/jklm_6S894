@@ -152,7 +152,7 @@ void draw_triangle(
     }
 }
 
-int main(int argc, char** argv) {
+int cpu_render() {
     constexpr int FRAME_WIDTH = 3500;
     constexpr int FRAME_HEIGHT = FRAME_WIDTH;
     TGAImage frame(FRAME_WIDTH, FRAME_HEIGHT, TGAImage::RGB);
