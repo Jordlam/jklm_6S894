@@ -31,5 +31,6 @@ g++ -O3 -c -o ${CTR_BUILD_DIR}/obj_loader.o ${HELPER_DIR}obj_loader.cpp
 g++ -O3 -c -o ${CTR_BUILD_DIR}/tgaimage.o ${HELPER_DIR}tgaimage.cpp
 
 # Main files
+g++ -O3 -c -o ${CTR_BUILD_DIR}/args.o args.cpp
 g++ -O3 -c -o ${CTR_BUILD_DIR}/cpu_rasterizer.o cpu_rasterizer.cpp
-nvcc -O3 -o ${CTR_BUILD_DIR}/main main.cu ${CTR_BUILD_DIR}/ufbx.o ${CTR_BUILD_DIR}/fbx_loader.o ${CTR_BUILD_DIR}/obj_loader.o ${CTR_BUILD_DIR}/tgaimage.o ${CTR_BUILD_DIR}/cpu_rasterizer.o
+nvcc -O3 -o ${CTR_BUILD_DIR}/main main.cu ${CTR_BUILD_DIR}/ufbx.o ${CTR_BUILD_DIR}/fbx_loader.o ${CTR_BUILD_DIR}/obj_loader.o ${CTR_BUILD_DIR}/tgaimage.o ${CTR_BUILD_DIR}/cpu_rasterizer.o ${CTR_BUILD_DIR}/args.o

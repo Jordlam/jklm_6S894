@@ -1,7 +1,4 @@
 #include "cpu_rasterizer.h"
-#include "include/tgaimage.h"
-#include "include/obj_loader.h"
-#include "include/fbx_loader.h"
 
 Point2D Point2D::operator+(Point2D p) {
     return {x + p.x, y + p.y};

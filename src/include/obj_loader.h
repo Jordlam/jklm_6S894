@@ -14,7 +14,10 @@ public:
     void loadModel(const std::string &obj_file, const std::string &mtl_path=std::string(""));
     // Return the number of faces for object i
     size_t nfaces(int i);
+    tinyobj::attrib_t get_attrib();
+    tinyobj::shape_t get_shape(int i);
     std::vector<float> vert(int i, int t, int v);
+    void cleanup();
 };
 
 // Don't use but for example:

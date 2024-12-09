@@ -34,6 +34,12 @@ void Model::loadModel(const std::string &obj_file, const std::string &mtl_path) 
 size_t Model::nfaces(int i) {
     return shapes[i].mesh.indices.size();
 }
+tinyobj::attrib_t Model::get_attrib() {
+    return attrib;
+}
+tinyobj::shape_t Model::get_shape(int i) {
+    return shapes[i];
+}
 std::vector<float> Model::vert(int i, int t, int v) {
     tinyobj::index_t idx = shapes[i].mesh.indices[t + v];
     int vertex_index = idx.vertex_index;
@@ -41,6 +47,10 @@ std::vector<float> Model::vert(int i, int t, int v) {
     float v_y = attrib.vertices[3 * vertex_index + 1];
     float v_z = attrib.vertices[3 * vertex_index + 2];
     return {v_x, v_y, v_z};
+}
+void Model::cleanup() {
+    // Model should not require cleanup but I could be wrong...
+    return;
 }
 
 // bool WriteObj(const std::string& filename, const tinyobj::attrib_t& attributes, const std::vector<tinyobj::shape_t>& shapes, const std::vector<tinyobj::material_t>& materials, bool coordTransform) {

@@ -1,6 +1,10 @@
 #ifndef CPU_RASTERIZER
 #define CPU_RASTERIZER
 
+#include "include/tgaimage.h"
+#include "include/obj_loader.h"
+#include "include/fbx_loader.h"
+
 #include <cmath>
 #include <vector>
 #include <array>
