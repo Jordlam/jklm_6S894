@@ -1,6 +1,7 @@
 #include "cpu_rasterizer.h"
 #include "include/tgaimage.h"
 #include "include/obj_loader.h"
+#include "include/fbx_loader.h"
 
 Point2D Point2D::operator+(Point2D p) {
     return {x + p.x, y + p.y};
@@ -156,9 +157,14 @@ int main(int argc, char** argv) {
     constexpr int FRAME_HEIGHT = FRAME_WIDTH;
     TGAImage frame(FRAME_WIDTH, FRAME_HEIGHT, TGAImage::RGB);
 
+    // Parse objects and triangles
     Model model;
     model.loadModel("data/head.obj");
     // model.loadModel("data/amongus_triangles.obj", "data/");
+
+    // Parse scene with cameras and lights
+    Scene scene;
+    scene.loadFBX("data/views.fbx");
     Point3D light_direction({0.0, 0.0, -1.0});
     std::vector<float> max_pixel_z(FRAME_WIDTH * FRAME_HEIGHT, std::numeric_limits<float>::lowest());
 
@@ -221,5 +227,6 @@ int main(int argc, char** argv) {
     printf("Saving drawing...\n");
     frame.write_tga_file("out/framebuffer.tga");
 
+    scene.cleanup();
     return 0;
 }
