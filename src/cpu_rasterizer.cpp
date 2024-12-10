@@ -173,12 +173,12 @@ std::array<int, 4> bounding_box(
     auto [lowest_y, highest_y] = std::minmax({triangle.a.y, triangle.b.y, triangle.c.y});
 
     // Bound by the image size.
-    lowest_x = std::max(lowest_x - 1, 0);
-    lowest_y = std::max(lowest_y - 1, 0);
-    highest_x = std::min(highest_x + 1, image_width - 1);
-    highest_y = std::min(highest_y + 1, image_height - 1);
+    lowest_x = std::max(lowest_x, 0);
+    lowest_y = std::max(lowest_y, 0);
+    highest_x = std::min(highest_x + 1, image_width);
+    highest_y = std::min(highest_y + 1, image_height);
 
-    return {lowest_x, highest_x, lowest_y + 1, highest_y + 1};
+    return {lowest_x, highest_x, lowest_y, highest_y};
 }
 
 // Returns barycentric coordinates for vertex c and b, respectively.
