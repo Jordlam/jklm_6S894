@@ -21,6 +21,7 @@ struct Args {
     float *vertex_y;
     // Stored like so: [v1.z, v5.z, v0.z, ...]
     float *vertex_z;
+    float *z_buffer;
 
     // For imaging
     float *triangle_red;
