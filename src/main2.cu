@@ -11,111 +11,85 @@
 #include <string>
 #include <vector>
 
-
-
-
-
-
-
-// #include <cuda_runtime.h>
-// #include <iostream>
-// #include "cpu_rasterizer.h"
-
-// int main(int argc, char const *const *argv) {
-//     // CPU
-//     cudaEvent_t start, stop;
-//     float milliseconds = 0;
-//     cudaEventCreate(&start);
-//     cudaEventCreate(&stop);
-//     cudaEventRecord(start);
-
-//     cpu_render();
-
-//     cudaEventRecord(stop);
-//     cudaEventSynchronize(stop);
-//     cudaEventElapsedTime(&milliseconds, start, stop);
-//     printf("Time: %f ms\n", milliseconds);
-//     cudaEventDestroy(start);
-//     cudaEventDestroy(stop);
-
-//     // TODO GPU
-//     return 0;
-// }
-
-// __global__ void draw_triangles(
-//     uint32_t max_triangles_per_tile
-// ) {
-//     uint32_t x = blockIdx.x * TILE_SIZE + threadIdx.x;
-//     uint32_t y = blockIdx.y * TILE_SIZE + threadIdx.y
-
-//     uint32_t tile_index = blockIdx.y * gridDim.x + blockIdx.x; 
-//     uint32_t tile_triangles_start = tile_index * max_triangles_per_tile; 
-
-//     int32_t pixel_idx = y * width + x;
-//     float pixel_red = 1.0f;
-//     float pixel_green = 1.0f;
-//     float pixel_blue = 1.0f;
-
-//     // for every triangle in the tile:
-//     for (
-//         int i = tile_triangles_start;
-//         (i < tile_triangles_start + max_triangles_per_tile) && map[i] < n_triangles;
-//         ++i
-//     ) {
-
-//         x_index = args.vertices[triangle_num][0]
-//         y_index = args.vertices[triangle_num][1]
-//         z_index = args.vertices[triangle_num][2]
-
-//         x = args.vertex_x[x_index]
-//         y = args.vertex_y[y_index]
-//         z = args.vertex_z[z_index]
-
-//         Point3D world_triangle_vertices[3];
-//         Point2D screen_triangle_vertices[3];
-//         float z_coords[3];
-//         for (int v = 0; v < 3; ++v) {
-//             std::vector<float> vertices = model.vert(i, t, v);
-//             float world_x = vertices[0];
-//             float world_y = vertices[1];
-//             float world_z = vertices[2];
-            
-//             world_triangle_vertices[v] = Point3D({
-//                 static_cast<float>(world_x),
-//                 static_cast<float>(world_y),
-//                 static_cast<float>(world_z)
-//             });
-
-//             int screen_x = (world_x + 1.0) * static_cast<double>(FRAME_WIDTH) / 2.0;
-//             int screen_y = (world_y + 1.0) * static_cast<double>(FRAME_HEIGHT) / 2.0;
-//             screen_triangle_vertices[v] = Point2D({screen_x, screen_y});
-
-//             z_coords[v] = static_cast<float>(world_z);
-//         }
-
-//         if (point_inside_triangle(triangle, pixel)) {
-//             if (
-//                 pixel_visible_update(
-//                     triangle,
-//                     pixel,
-//                     triangle_z_coords,
-//                     max_pixel_z,
-//                     IMAGE_WIDTH)
-//             ) {
-//                 image.set(x, y, color)
-//             }
-//         }
-//     }
-// }
-
-
-
-
-
-
-
 // New Additions.
 #include <cuda/std/array>
+
+
+
+
+// #include "cpu_rasterizer.h"
+// #include "args.h"
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct Point2D {
+    int x;
+    int y;
+
+    __device__ Point2D operator+(Point2D p);
+    __device__ Point2D operator-(Point2D p);
+    __device__ int dot(Point2D p);
+};
+
+struct Point3D {
+    float x;
+    float y;
+    float z;
+    // Point3D() : x(0.0f), y(0.0f), z(0.0f) {}  // QUESTION: Why does this cause errors?
+
+    __device__ Point3D operator+(Point3D p);
+    __device__ Point3D operator-(Point3D p);
+    __device__ Point3D cross(Point3D p);
+    __device__ float dot(Point3D p);
+    __device__ float magnitude();
+    __device__ Point3D normalize();
+};
+
+template<typename Point>
+struct Triangle {
+    Point a;
+    Point b;
+    Point c;
+
+    __device__ Triangle<Point>(
+        Point _a,
+        Point _b,
+        Point _c
+    ) :
+        a(_a), b(_b), c(_c)
+    {}
+
+    __device__ Point normal();
+};
+
+
+
+
+
+
+
+
+
+using Triangle2D = Triangle<Point2D>;
+using Triangle3D = Triangle<Point3D>;
+
+
+
+
+
+
+
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Utility Functions
@@ -184,22 +158,38 @@ namespace triangles_gpu {
 constexpr uint32_t TILE_LOG = 4;
 constexpr uint32_t TILE_SIZE = 1 << TILE_LOG;
 
+__device__ cuda::std::array<Point3D, 3> get_triangle(int i, Args *args) {
+    int32_t v0_idx = args->vertices[3*i + 0];
+    int32_t v1_idx = args->vertices[3*i + 1];
+    int32_t v2_idx = args->vertices[3*i + 2];
+    Point3D point0({args->vertex_x[v0_idx], args->vertex_y[v0_idx], args->vertex_z[v0_idx]});
+    Point3D point1({args->vertex_x[v1_idx], args->vertex_y[v1_idx], args->vertex_z[v1_idx]});
+    Point3D point2({args->vertex_x[v2_idx], args->vertex_y[v2_idx], args->vertex_z[v2_idx]});
+    return {point0, point1, point2};
+}
+
+
 // Returns bounding box of `triangle`, with exclusive ends.
-// TODO: Check whether Cuda array works and whether the 
+// TODO: Check whether Cuda array works and whether the
 // function works overall.
 __device__ cuda::std::array<int, 4> bounding_box(
     Triangle2D triangle,
     int image_width,
     int image_height
 ) {
-    auto [lowest_x, highest_x] = std::minmax({triangle.a.x, triangle.b.x, triangle.c.x});
-    auto [lowest_y, highest_y] = std::minmax({triangle.a.y, triangle.b.y, triangle.c.y});
+    // auto [lowest_x, highest_x] = std::minmax({triangle.a.x, triangle.b.x, triangle.c.x});
+    // auto [lowest_y, highest_y] = std::minmax({triangle.a.y, triangle.b.y, triangle.c.y});
 
-    // Bound by the image size.
-    lowest_x = std::max(lowest_x, 0);
-    lowest_y = std::max(lowest_y, 0);
-    highest_x = std::min(highest_x, image_width);
-    highest_y = std::min(highest_y, image_height);
+    int lowest_x = min(min(triangle.a.x, triangle.b.x), triangle.c.x);
+    int highest_x = max(max(triangle.a.x, triangle.b.x), triangle.c.x);
+    int lowest_y = min(min(triangle.a.y, triangle.b.y), triangle.c.y);
+    int highest_y = max(max(triangle.a.y, triangle.b.y), triangle.c.y);
+
+    // // Bound by the image size.
+    lowest_x = max(lowest_x, 0);
+    lowest_y = max(lowest_y, 0);
+    highest_x = min(highest_x, image_width);
+    highest_y = min(highest_y, image_height);
 
     return {lowest_x, highest_x, lowest_y, highest_y};
 }
@@ -231,26 +221,26 @@ __device__ bool point_inside_triangle(Triangle2D triangle, Point2D point) {
     return (u >= 0) && (v >= 0) && (u + v <= 1);
 }
 
+template<uint32_t WIDTH, uint32_t HEIGHT>
 __device__ bool pixel_visible_update(
     Triangle2D triangle,
     Point2D point,
-    std::array<float, 3> triangle_z_coords,
-    std::vector<float> &max_pixel_z,
-    int image_width
+    cuda::std::array<float, 3> triangle_z_coords,
+    float *max_pixel_z
 ) {
     auto [bary_c, bary_b] = barycentric_coordinates(triangle, point);
-    std::array<decltype(bary_c), 3> barycentric_coord = {1 - bary_c - bary_b, bary_b, bary_c};
+    cuda::std::array<decltype(bary_c), 3> barycentric_coord = {1 - bary_c - bary_b, bary_b, bary_c};
 
     float pixel_z_value = 0;
     for (int i = 0; i < 3; ++i) {
         pixel_z_value += static_cast<float>(barycentric_coord[i] * triangle_z_coords[i]);
     }
 
-    bool pixel_is_visible = pixel_z_value > max_pixel_z[point.y * image_width + point.x];
+    bool pixel_is_visible = pixel_z_value > max_pixel_z[point.y * WIDTH + point.x];
     if (pixel_is_visible) {
-        max_pixel_z[point.y * image_width + point.x] = pixel_z_value;
+        max_pixel_z[point.y * WIDTH + point.x] = pixel_z_value;
     }
-    
+
     return pixel_is_visible;
 }
 
@@ -258,13 +248,15 @@ template<uint32_t GROUP_SIZE = 1>
 __global__ void block_count_triangles_per_tile(
     int32_t width,
     int32_t height,
-    Args args,
+    Args *args,
     // int32_t n_triangle,
     // float const *triangle_x,      // pointer to GPU memory
     // float const *triangle_y,      // pointer to GPU memory
     // float const *triangle_radius, // pointer to GPU memory
     uint32_t *global_counts
 ) {
+    uint32_t n_triangle = args->n_triangle;
+
     extern __shared__ uint32_t shmem_tile_counts[];
 
     // Initialize `shmem_tile_counts` to zero.
@@ -280,14 +272,14 @@ __global__ void block_count_triangles_per_tile(
     // Count how many of the triangles (that this block is responsible for) belong to each tile.
     uint32_t block_start = blockIdx.x * blockDim.x * GROUP_SIZE;
     for (uint32_t i = block_start + threadIdx.x; i < min(block_start + (blockDim.x * GROUP_SIZE), n_triangle); i += blockDim.x) {
-        cuda::std::array<Point3D, 3> world_vertices = args.get_triangle(i);
-        
+        cuda::std::array<Point3D, 3> world_vertices = get_triangle(i, args);
+
         // Project to 2D.
         cuda::std::array<Point2D, 3> screen_triangle_vertices;
         for (int v = 0; v < 3; ++v) {
-            float world_x = world_vertices[0];
-            float world_y = world_vertices[1];
-            
+            float world_x = world_vertices[v].x;
+            float world_y = world_vertices[v].y;
+
             int screen_x = (world_x + 1.0) * static_cast<double>(width) / 2.0;
             int screen_y = (world_y + 1.0) * static_cast<double>(height) / 2.0;
             screen_triangle_vertices[v] = Point2D({screen_x, screen_y});
@@ -299,7 +291,7 @@ __global__ void block_count_triangles_per_tile(
             screen_triangle_vertices[1],
             screen_triangle_vertices[2]
         );
-        
+
         // Get all the tiles the triangle covers.
         auto [lowest_x, highest_x, lowest_y, highest_y] = bounding_box(screen_triangle, width, height);
         uint32_t t_tile_start_x = lowest_x >> TILE_LOG;
@@ -355,7 +347,7 @@ __global__ void map_tiles_to_triangles(
     uint32_t height,
 
     // Triangle stuff.
-    Args args,
+    Args *args,
 
     // Metadata and output.
     uint32_t *per_tile_prefix_sum,
@@ -365,24 +357,26 @@ __global__ void map_tiles_to_triangles(
     // Launch parameters.
     uint32_t group_size
 ) {
+    uint32_t n_triangle = args->n_triangle;
+
     // Initialize `shmem_tile_counts` to zero.
     uint32_t num_tiles_x = (width + TILE_SIZE - 1) >> TILE_LOG;
-    uint32_t num_tiles_y = (height + TILE_SIZE - 1) >> TILE_LOG;
-    uint32_t num_tiles = num_tiles_x * num_tiles_y;
-    
+    // uint32_t num_tiles_y = (height + TILE_SIZE - 1) >> TILE_LOG;
+    // uint32_t num_tiles = num_tiles_x * num_tiles_y;
+
     const uint32_t global_index = blockIdx.x * blockDim.x + threadIdx.x;
     uint32_t thread_start = global_index * group_size;
     if (thread_start >= n_triangle) { return; }
 
     for (uint32_t i = thread_start; i < min(thread_start + group_size, n_triangle); ++i) {
-        cuda::std::array<Point3D, 3> world_vertices = args.get_triangle(i);
-        
+        cuda::std::array<Point3D, 3> world_vertices = get_triangle(i, args);
+
         // Project to 2D.
         cuda::std::array<Point2D, 3> screen_triangle_vertices;
         for (int v = 0; v < 3; ++v) {
-            float world_x = world_vertices[0];
-            float world_y = world_vertices[1];
-            
+            float world_x = world_vertices[v].x;
+            float world_y = world_vertices[v].y;
+
             int screen_x = (world_x + 1.0) * static_cast<double>(width) / 2.0;
             int screen_y = (world_y + 1.0) * static_cast<double>(height) / 2.0;
             screen_triangle_vertices[v] = Point2D({screen_x, screen_y});
@@ -394,7 +388,7 @@ __global__ void map_tiles_to_triangles(
             screen_triangle_vertices[1],
             screen_triangle_vertices[2]
         );
-        
+
         // Get all the tiles the triangle covers.
         auto [lowest_x, highest_x, lowest_y, highest_y] = bounding_box(screen_triangle, width, height);
         uint32_t t_tile_start_x = lowest_x >> TILE_LOG;
@@ -427,10 +421,9 @@ __global__ void gpu_print(uint32_t *map, uint32_t num, uint32_t tile_size) {
     }
 }
 
+template<uint32_t WIDTH, uint32_t HEIGHT>
 __global__ void draw_triangles(
-    int32_t width,
-    int32_t height,
-    Args args,
+    Args *args,
     uint32_t *map,
     uint32_t max_triangles_per_tile
 ) {
@@ -440,46 +433,45 @@ __global__ void draw_triangles(
     uint32_t tile_index = blockIdx.y * gridDim.x + blockIdx.x;
     uint32_t tile_triangles_start = tile_index * max_triangles_per_tile;
 
-    int32_t pixel_idx = y * width + x;
+    int32_t pixel_idx = y * WIDTH + x;
     for (int i = tile_triangles_start;
-         (i < tile_triangles_start + max_triangles_per_tile) && (map[i] < n_triangle);
+         (i < tile_triangles_start + max_triangles_per_tile) && (map[i] < args->n_triangle);
          ++i
     ) {
-        cuda::std::array<Point3D, 3> world_vertices = args.get_triangle(i);
+        cuda::std::array<Point3D, 3> world_vertices = get_triangle(i, args);
 
         // Project to 2D and save z-coordinate.
         cuda::std::array<Point3D, 3> world_triangle_vertices;
         cuda::std::array<Point2D, 3> screen_triangle_vertices;
         cuda::std::array<float, 3> z_coords;
         for (int v = 0; v < 3; ++v) {
-            float world_x = world_vertices[0];
-            float world_y = world_vertices[1];
-            float world_z = world_vertices[2];
-            world_triangle_vertics[v] = Point3D({world_x, world_y, world_z});
-            
-            int screen_x = (world_x + 1.0) * static_cast<double>(width) / 2.0;
-            int screen_y = (world_y + 1.0) * static_cast<double>(height) / 2.0;
+            float world_x = world_vertices[v].x;
+            float world_y = world_vertices[v].y;
+            float world_z = world_vertices[v].z;
+            world_triangle_vertices[v] = Point3D({world_x, world_y, world_z});
+
+            int screen_x = (world_x + 1.0) * static_cast<double>(WIDTH) / 2.0;
+            int screen_y = (world_y + 1.0) * static_cast<double>(HEIGHT) / 2.0;
             screen_triangle_vertices[v] = Point2D({screen_x, screen_y});
 
             z_coords[v] = world_z;
         }
-        
+
         // Create 2D triangle.
         Triangle2D screen_triangle(
             screen_triangle_vertices[0],
             screen_triangle_vertices[1],
             screen_triangle_vertices[2]
         );
-        
-        Point2D pixel({x, y});
+
+        Point2D pixel({static_cast<int>(x), static_cast<int>(y)});
         if (
-            point_inside_triangle(triangle, pixel)
-            && pixel_visible_update(
-                triangle,
+            point_inside_triangle(screen_triangle, pixel)
+            && pixel_visible_update<WIDTH, HEIGHT>(
+                screen_triangle,
                 pixel,
-                triangle_z_coords,
-                max_pixel_z,
-                width
+                z_coords,
+                args->z_buffer
             )
         ) {
             Triangle3D world_triangle(
@@ -489,23 +481,22 @@ __global__ void draw_triangles(
             );
 
             Point3D norm = world_triangle.normal();
+
+            // TODO: Replace hardcoded light direction.
+            Point3D light_direction({0.0, 0.0, -1.0});
             float light_intensity = norm.dot(light_direction);
             if (light_intensity > 0) {
-                float adjusted_value = 255 * light_intensity;
-                TGAColor color(
-                    adjusted_value,
-                    adjusted_value,
-                    adjusted_value,
-                    255
-                );
-
-                args.img.set(x, y, color); 
-            } 
+                args->pixel_intensity[pixel_idx] = 255 * light_intensity;
+            }
         }
     }
 }
 
 void launch_render(GpuMemoryPool &memory_pool) {
+    constexpr uint32_t width = 3500;
+    constexpr uint32_t height = 3500;
+    constexpr uint32_t num_pixels = width * height;
+
     // Get buffers
     std::string obj_file = "data/head.obj";
     std::string mtl_path = "data/";
@@ -522,15 +513,20 @@ void launch_render(GpuMemoryPool &memory_pool) {
     float* vertex_x_d = (float*)memory_pool.alloc(vertex_dim);
     float* vertex_y_d = (float*)memory_pool.alloc(vertex_dim);
     float* vertex_z_d = (float*)memory_pool.alloc(vertex_dim);
-    float* light_intensity_d = (float*)memory_pool.alloc(n_triangle * sizeof(float));
+    float* light_intensity_d = (float*)memory_pool.alloc(num_pixels * sizeof(float));
 
-    uint32_t num_pixels = width * height;
-    float* z_buffer = (float*)memory_pool.alloc(sizeof(float) * width * height);
-    
-    cudaMemset(
-        (void*)max_pixel_z,
-        std::numeric_limits<float>::lowest(),
-        num_pixels * sizeof(float)
+    float* z_buffer_d = (float*)memory_pool.alloc(sizeof(float) * num_pixels);
+
+    std::array<float, num_pixels> z_buffer_h;
+    for (auto &x : z_buffer_h) {
+        x = std::numeric_limits<float>::lowest();
+    }
+
+    cudaMemcpy(
+        z_buffer_d,
+        z_buffer_h.data(),
+        num_pixels * sizeof(float),
+        cudaMemcpyHostToDevice
     );
 
     // Copy to device memory.
@@ -540,14 +536,14 @@ void launch_render(GpuMemoryPool &memory_pool) {
         vertices_size, // number of bytes to copy
         cudaMemcpyHostToDevice
     ));
-    
+
     CUDA_CHECK(cudaMemcpy(
         vertex_x_d,
         &args.vertex_x,
         vertex_dim, // number of bytes to copy
         cudaMemcpyHostToDevice
     ));
-    
+
     CUDA_CHECK(cudaMemcpy(
         vertex_y_d,
         &args.vertex_y,
@@ -562,13 +558,14 @@ void launch_render(GpuMemoryPool &memory_pool) {
         cudaMemcpyHostToDevice
     ));
 
-    Args device_args;
-    args.vertices =
+    Args *device_args = (Args*)memory_pool.alloc(sizeof(Args));
 
-    uint32_t num_pixels = FRAME_WIDTH * FRAME_HEIGHT;
-
-    float max_pixel_z = memory_pool.alloc(FRAME_WIDTH * FRAME_HEIGHT * sizeof(float));
-    cudaMemset((void*)max_pixel_z, 0xFFFF, num_pixels * sizeof(float));
+    device_args->vertices = vertices_d;
+    device_args->vertex_x = vertex_x_d;
+    device_args->vertex_y = vertex_y_d;
+    device_args->vertex_z = vertex_z_d;
+    device_args->pixel_intensity = light_intensity_d;
+    device_args->z_buffer = z_buffer_d;
 
     constexpr uint32_t GROUP_SIZE = 1;
     constexpr uint32_t C_NUM_THREADS = 32 * 16;
@@ -590,7 +587,7 @@ void launch_render(GpuMemoryPool &memory_pool) {
     block_count_triangles_per_tile<<<c_num_blocks, C_NUM_THREADS, shmem_size>>>(
         width,
         height,
-        args,
+        device_args,
         counters_d
     );
     t.stop("Counter time:");
@@ -602,7 +599,7 @@ void launch_render(GpuMemoryPool &memory_pool) {
     // Get memory locations and initialize max values.
     uint32_t most_triangles_in_tile_h = 0;
     uint32_t *most_triangles_in_tile_d =
-        reinterpret_cast<uint32_t *>(memory_pool.alloc(sizeof(most_triangles_in_tile_h)));
+    reinterpret_cast<uint32_t *>(memory_pool.alloc(sizeof(most_triangles_in_tile_h)));
     CUDA_CHECK(cudaMemcpy(
         most_triangles_in_tile_d,
         &most_triangles_in_tile_h,
@@ -646,7 +643,7 @@ void launch_render(GpuMemoryPool &memory_pool) {
         width,
         height,
 
-        args,
+        device_args,
 
         counters_d,
         map,
@@ -659,15 +656,44 @@ void launch_render(GpuMemoryPool &memory_pool) {
     t.stop("Tile to blocks time:");
 
     t.start();
-    draw_triangles<<<dim3(num_tiles_x, num_tiles_y), dim3(TILE_SIZE, TILE_SIZE)>>>(
-        width,
-        height,
-        args,
+    draw_triangles<width, height><<<dim3(num_tiles_x, num_tiles_y), dim3(TILE_SIZE, TILE_SIZE)>>>(
+        device_args,
         map,
         most_triangles_in_tile_h
     );
 
-    // std::cout << num_tiles 
+
+
+
+
+    float* light_values_h = new float[num_pixels];
+    CUDA_CHECK(cudaMemcpy(
+        light_values_h,
+        &device_args->pixel_intensity,
+        num_pixels * sizeof(float), // number of bytes to copy
+        cudaMemcpyDeviceToHost
+    ));
+
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            uint32_t pixel_one_dim = y * width + x;
+            float light_value = light_values_h[pixel_one_dim];
+            TGAColor color(
+                light_value,
+                light_value,
+                light_value,
+                255
+            );
+
+            args.img.set(x, y, color);
+        }
+    }
+
+
+    args.img.write_tga_file("out/framebuffer.tga");
+
+    // std::cout << num_tiles
     t.stop("Draw");
 
     // printf("\n-----------------------\n");

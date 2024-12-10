@@ -24,6 +24,8 @@ struct Args {
     float *z_buffer;
 
     // For imaging
+    float *pixel_intensity;
+
     float *triangle_red;
     float *triangle_green;
     float *triangle_blue;
