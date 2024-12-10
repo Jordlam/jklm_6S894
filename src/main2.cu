@@ -204,6 +204,56 @@ __device__ cuda::std::array<int, 4> bounding_box(
     return {lowest_x, highest_x, lowest_y, highest_y};
 }
 
+// Returns barycentric coordinates for vertex c and b, respectively.
+// Uses code adapted from this page: https://blackpawn.com/texts/pointinpoly/
+__device__ cuda::std::array<float, 2> barycentric_coordinates(Triangle2D triangle, Point2D point) {
+    Point2D v0 = triangle.c - triangle.a;
+    Point2D v1 = triangle.b - triangle.a;
+    Point2D v2 = point - triangle.a;
+
+    int dot00 = v0.dot(v0);
+    int dot01 = v0.dot(v1);
+    int dot02 = v0.dot(v2);
+    int dot11 = v1.dot(v1);
+    int dot12 = v1.dot(v2);
+
+    float invDenom = 1.0 / static_cast<float>(dot00  * dot11 - dot01  * dot01);
+    float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+    float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+
+    return {u, v};
+}
+
+__device__ bool point_inside_triangle(Triangle2D triangle, Point2D point) {
+    auto [u, v] = barycentric_coordinates(triangle, point);
+
+    // Determine whether the point is in the triangle.
+    return (u >= 0) && (v >= 0) && (u + v <= 1);
+}
+
+__device__ bool pixel_visible_update(
+    Triangle2D triangle,
+    Point2D point,
+    std::array<float, 3> triangle_z_coords,
+    std::vector<float> &max_pixel_z,
+    int image_width
+) {
+    auto [bary_c, bary_b] = barycentric_coordinates(triangle, point);
+    std::array<decltype(bary_c), 3> barycentric_coord = {1 - bary_c - bary_b, bary_b, bary_c};
+
+    float pixel_z_value = 0;
+    for (int i = 0; i < 3; ++i) {
+        pixel_z_value += static_cast<float>(barycentric_coord[i] * triangle_z_coords[i]);
+    }
+
+    bool pixel_is_visible = pixel_z_value > max_pixel_z[point.y * image_width + point.x];
+    if (pixel_is_visible) {
+        max_pixel_z[point.y * image_width + point.x] = pixel_z_value;
+    }
+    
+    return pixel_is_visible;
+}
+
 template<uint32_t GROUP_SIZE = 1>
 __global__ void block_count_triangles_per_tile(
     int32_t width,
@@ -304,11 +354,8 @@ __global__ void map_tiles_to_triangles(
     uint32_t width,
     uint32_t height,
 
-    // triangle stuff.
-    int32_t n_triangle,
-    float const *triangle_x,      // pointer to GPU memory
-    float const *triangle_y,      // pointer to GPU memory
-    float const *triangle_radius, // pointer to GPU memory
+    // Triangle stuff.
+    Args args,
 
     // Metadata and output.
     uint32_t *per_tile_prefix_sum,
@@ -383,17 +430,7 @@ __global__ void gpu_print(uint32_t *map, uint32_t num, uint32_t tile_size) {
 __global__ void draw_triangles(
     int32_t width,
     int32_t height,
-    int32_t n_triangle,
-    float const *triangle_x,      // pointer to GPU memory
-    float const *triangle_y,      // pointer to GPU memory
-    float const *triangle_radius, // pointer to GPU memory
-    float const *triangle_red,    // pointer to GPU memory
-    float const *triangle_green,  // pointer to GPU memory
-    float const *triangle_blue,   // pointer to GPU memory
-    float const *triangle_alpha,  // pointer to GPU memory
-    float *img_red,             // pointer to GPU memory
-    float *img_green,           // pointer to GPU memory
-    float *img_blue,            // pointer to GPU memory
+    Args args,
     uint32_t *map,
     uint32_t max_triangles_per_tile
 ) {
@@ -409,16 +446,22 @@ __global__ void draw_triangles(
          ++i
     ) {
         cuda::std::array<Point3D, 3> world_vertices = args.get_triangle(i);
-        
-        // Project to 2D.
+
+        // Project to 2D and save z-coordinate.
+        cuda::std::array<Point3D, 3> world_triangle_vertices;
         cuda::std::array<Point2D, 3> screen_triangle_vertices;
+        cuda::std::array<float, 3> z_coords;
         for (int v = 0; v < 3; ++v) {
             float world_x = world_vertices[0];
             float world_y = world_vertices[1];
+            float world_z = world_vertices[2];
+            world_triangle_vertics[v] = Point3D({world_x, world_y, world_z});
             
             int screen_x = (world_x + 1.0) * static_cast<double>(width) / 2.0;
             int screen_y = (world_y + 1.0) * static_cast<double>(height) / 2.0;
             screen_triangle_vertices[v] = Point2D({screen_x, screen_y});
+
+            z_coords[v] = world_z;
         }
         
         // Create 2D triangle.
@@ -427,50 +470,54 @@ __global__ void draw_triangles(
             screen_triangle_vertices[1],
             screen_triangle_vertices[2]
         );
-       
-        uint32_t c = map[i];
+        
+        Point2D pixel({x, y});
+        if (
+            point_inside_triangle(triangle, pixel)
+            && pixel_visible_update(
+                triangle,
+                pixel,
+                triangle_z_coords,
+                max_pixel_z,
+                width
+            )
+        ) {
+            Triangle3D world_triangle(
+                world_triangle_vertices[0],
+                world_triangle_vertices[1],
+                world_triangle_vertices[2]
+            );
 
-        float c_x = triangle_x[c];
-        float c_y = triangle_y[c];
-        float c_radius = triangle_radius[c];
-       
-        float dx = x - c_x;
-        float dy = y - c_y;
+            Point3D norm = world_triangle.normal();
+            float light_intensity = norm.dot(light_direction);
+            if (light_intensity > 0) {
+                float adjusted_value = 255 * light_intensity;
+                TGAColor color(
+                    adjusted_value,
+                    adjusted_value,
+                    adjusted_value,
+                    255
+                );
 
-        if (!(dx * dx + dy * dy < c_radius * c_radius)) {
-            continue;
+                args.img.set(x, y, color); 
+            } 
         }
-
-        float pixel_alpha = triangle_alpha[c];
-        pixel_red =
-            triangle_red[c] * pixel_alpha + pixel_red * (1.0f - pixel_alpha);
-        pixel_green =
-            triangle_green[c] * pixel_alpha + pixel_green * (1.0f - pixel_alpha);
-        pixel_blue =
-            triangle_blue[c] * pixel_alpha + pixel_blue * (1.0f - pixel_alpha);
     }
-
-    img_red[pixel_idx] = pixel_red;
-    img_green[pixel_idx] = pixel_green;
-    img_blue[pixel_idx] = pixel_blue;
 }
 
-void launch_render(
-    int32_t width,
-    int32_t height,
-    int32_t n_triangle,
-    float const *triangle_x,      // pointer to GPU memory
-    float const *triangle_y,      // pointer to GPU memory
-    float const *triangle_radius, // pointer to GPU memory
-    float const *triangle_red,    // pointer to GPU memory
-    float const *triangle_green,  // pointer to GPU memory
-    float const *triangle_blue,   // pointer to GPU memory
-    float const *triangle_alpha,  // pointer to GPU memory
-    float *img_red,             // pointer to GPU memory
-    float *img_green,           // pointer to GPU memory
-    float *img_blue,            // pointer to GPU memory
-    GpuMemoryPool &memory_pool
-) {
+void launch_render(GpuMemoryPool &memory_pool) {
+    // Get buffers
+    std::string obj_file = "data/head.obj";
+    std::string mtl_path = "data/";
+    std::string fbx_file = "data/views.fbx";
+    Args args;
+    args.get_args(obj_file.c_str(), mtl_path.c_str(), fbx_file.c_str());
+
+    uint32_t num_pixels = FRAME_WIDTH * FRAME_HEIGHT;
+
+    float max_pixel_z = memory_pool.alloc(FRAME_WIDTH * FRAME_HEIGHT * sizeof(float));
+    cudaMemset((void*)max_pixel_z, 0xFFFF, num_pixels * sizeof(float));
+
     constexpr uint32_t GROUP_SIZE = 1;
     constexpr uint32_t C_NUM_THREADS = 32 * 16;
     constexpr uint32_t ELEMENTS_PER_BLOCK = GROUP_SIZE * C_NUM_THREADS;
@@ -491,10 +538,7 @@ void launch_render(
     block_count_triangles_per_tile<<<c_num_blocks, C_NUM_THREADS, shmem_size>>>(
         width,
         height,
-        n_triangle,
-        triangle_x,
-        triangle_y,
-        triangle_radius,
+        args,
         counters_d
     );
     t.stop("Counter time:");
@@ -550,10 +594,7 @@ void launch_render(
         width,
         height,
 
-        n_triangle,
-        triangle_x,
-        triangle_y,
-        triangle_radius,
+        args,
 
         counters_d,
         map,
@@ -569,17 +610,7 @@ void launch_render(
     draw_triangles<<<dim3(num_tiles_x, num_tiles_y), dim3(TILE_SIZE, TILE_SIZE)>>>(
         width,
         height,
-        n_triangle,
-        triangle_x,      // pointer to GPU memory
-        triangle_y,      // pointer to GPU memory
-        triangle_radius, // pointer to GPU memory
-        triangle_red,    // pointer to GPU memory
-        triangle_green,  // pointer to GPU memory
-        triangle_blue,   // pointer to GPU memory
-        triangle_alpha,  // pointer to GPU memory
-        img_red,             // pointer to GPU memory
-        img_green,           // pointer to GPU memory
-        img_blue,            // pointer to GPU memory
+        args,
         map,
         most_triangles_in_tile_h
     );
@@ -588,6 +619,9 @@ void launch_render(
     t.stop("Draw");
 
     // printf("\n-----------------------\n");
+
+    // DO NOT DELETE.
+    args.clean_args();
 }
 
 } // namespace triangles_gpu
