@@ -14,6 +14,8 @@ public:
     void loadFBX(const std::string &fbx_file);
     ufbx_node get_camera(int i);
     ufbx_node get_light(int i);
+    // As described here: https://www.scratchapixel.com/lessons/3d-basic-rendering/perspective-and-orthographic-projection-matrix/building-basic-perspective-projection-matrix.html
+    std::vector<int> project(float x, float y, float z);
     void cleanup();
 };
 

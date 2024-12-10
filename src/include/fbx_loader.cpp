@@ -41,6 +41,23 @@ ufbx_node Scene::get_camera(int i) {
 ufbx_node Scene::get_light(int i) {
     return lights[i];
 }
+std::vector<int> Scene::project(float x, float y, float z) {
+    ufbx_node camera = get_camera(0);
+    ufbx_vec3 translation = camera.geometry_transform.translation;
+    ufbx_matrix mm = camera.geometry_to_world;
+    float new_x = x*mm.m00 + y*mm.m10 + z*mm.m20 + translation.x;
+    float new_y = x*mm.m01 + y*mm.m11 + z*mm.m21 + translation.y;
+    float new_z = x*mm.m02 + y*mm.m12 + z*mm.m22 + translation.z;
+    float new_w = x*0 + y*0 - z*1 + 1*0;
+    if (new_w == 0) {
+        printf("Error: We encountered w'=0\n");
+    }
+    new_x /= new_w;
+    new_y /= new_w;
+    new_z /= new_w;
+    return {(int)new_x, (int)new_y, (int)new_z};
+
+}
 void Scene::cleanup() {
     ufbx_free_scene(scene);
 }
