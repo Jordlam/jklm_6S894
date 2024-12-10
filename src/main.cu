@@ -34,6 +34,8 @@ int main(int argc, char const *const *argv) {
     printf("Camera y %f\n", args.cam_pos.y);
     printf("Camera z %f\n", args.cam_pos.z);
     printf("Light direction {%f, %f, %f}\n", args.light_dir.x, args.light_dir.y, args.light_dir.z);
+    std::vector<int> projected = args.scene.project(args.vertex_x[idx], args.vertex_y[idx], args.vertex_z[idx]);
+    printf("We projected the vertex to: %i, %i, %i\n", projected[0], projected[1], projected[2]);
     printf("\nEnd of args text...\n");
 
     // CPU
