@@ -513,6 +513,58 @@ void launch_render(GpuMemoryPool &memory_pool) {
     Args args;
     args.get_args(obj_file.c_str(), mtl_path.c_str(), fbx_file.c_str());
 
+    int32_t n_triangle = args.n_triangle;
+
+    // Allocate device memory.
+    uint32_t vertices_size = sizeof(int32_t) * n_triangle * 3;
+    uint32_t vertex_dim = sizeof(float) * n_triangle * 3;
+    int32_t* vertices_d = (int32_t*)memory_pool.alloc(vertices_size);
+    float* vertex_x_d = (float*)memory_pool.alloc(vertex_dim);
+    float* vertex_y_d = (float*)memory_pool.alloc(vertex_dim);
+    float* vertex_z_d = (float*)memory_pool.alloc(vertex_dim);
+    float* light_intensity_d = (float*)memory_pool.alloc(n_triangle * sizeof(float));
+
+    uint32_t num_pixels = width * height;
+    float* z_buffer = (float*)memory_pool.alloc(sizeof(float) * width * height);
+    
+    cudaMemset(
+        (void*)max_pixel_z,
+        std::numeric_limits<float>::lowest(),
+        num_pixels * sizeof(float)
+    );
+
+    // Copy to device memory.
+    CUDA_CHECK(cudaMemcpy(
+        vertices_d,
+        &args.vertices,
+        vertices_size, // number of bytes to copy
+        cudaMemcpyHostToDevice
+    ));
+    
+    CUDA_CHECK(cudaMemcpy(
+        vertex_x_d,
+        &args.vertex_x,
+        vertex_dim, // number of bytes to copy
+        cudaMemcpyHostToDevice
+    ));
+    
+    CUDA_CHECK(cudaMemcpy(
+        vertex_y_d,
+        &args.vertex_y,
+        vertex_dim, // number of bytes to copy
+        cudaMemcpyHostToDevice
+    ));
+
+    CUDA_CHECK(cudaMemcpy(
+        vertex_z_d,
+        &args.vertex_z,
+        vertex_dim, // number of bytes to copy
+        cudaMemcpyHostToDevice
+    ));
+
+    Args device_args;
+    args.vertices =
+
     uint32_t num_pixels = FRAME_WIDTH * FRAME_HEIGHT;
 
     float max_pixel_z = memory_pool.alloc(FRAME_WIDTH * FRAME_HEIGHT * sizeof(float));
