@@ -15,30 +15,24 @@
 #include <cuda/std/array>
 
 
-
-
 // #include "cpu_rasterizer.h"
 #include "args.h"
-
-
-
-
-
-
-
-
-
-
-
 
 
 struct Point2D {
     int x;
     int y;
 
-    __device__ Point2D operator+(Point2D p);
-    __device__ Point2D operator-(Point2D p);
-    __device__ int dot(Point2D p);
+    __device__ Point2D operator+(Point2D p) {
+        return {x + p.x, y + p.y};
+    }
+    __device__ Point2D operator-(Point2D p) {
+        return {x - p.x, y - p.y};
+    }
+
+    __device__ int dot(Point2D p) {
+        return x * p.x + y * p.y;
+    }
 };
 
 struct Point3D {
@@ -47,12 +41,34 @@ struct Point3D {
     float z;
     // Point3D() : x(0.0f), y(0.0f), z(0.0f) {}  // QUESTION: Why does this cause errors?
 
-    __device__ Point3D operator+(Point3D p);
-    __device__ Point3D operator-(Point3D p);
-    __device__ Point3D cross(Point3D p);
-    __device__ float dot(Point3D p);
-    __device__ float magnitude();
-    __device__ Point3D normalize();
+    __device__ Point3D operator+(Point3D p) {
+        return {x + p.x, y + p.y, z + p.z};
+    }
+
+    __device__ Point3D operator-(Point3D p) {
+        return {x - p.x, y - p.y, z - p.z};
+    }
+
+    __device__ Point3D cross(Point3D p) {
+        return {y * p.z - z * p.y, z * p.x - x * p.z, x * p.y  - y  * p.x};
+    }
+
+    __device__ float dot(Point3D p) {
+        return x * p.x + y * p.y + z * p.z;
+    }
+
+    __device__ float magnitude() {
+        return sqrt(x * x + y * y + z * z);
+    }
+
+    __device__ Point3D normalize() {
+        float magnitude_reciprocal = 1 / magnitude();    
+        return {
+            x * magnitude_reciprocal,
+            y * magnitude_reciprocal, 
+            z * magnitude_reciprocal
+        };
+    }
 };
 
 template<typename Point>
@@ -72,16 +88,29 @@ struct Triangle {
     __device__ Point normal();
 };
 
-
-
-
-
-
-
-
-
 using Triangle2D = Triangle<Point2D>;
 using Triangle3D = Triangle<Point3D>;
+
+// `normal` only makes sense for `Triangle3D`.
+template<>
+__device__ Point3D Triangle3D::normal() {
+    // Must be in this order (i.e., using `b` as our point of reference),
+    // presumably because the cross product is not commutative, and the
+    // other orders cause issues.
+    Point3D u = a - b;
+    Point3D v = c - b;
+    
+    // Point3D u = a - c;
+    // Point3D v = b - c;
+
+    return u.cross(v).normalize();
+}
+
+
+
+
+
+
 
 
 
@@ -739,3 +768,38 @@ void launch_render(GpuMemoryPool &memory_pool) {
 }
 
 // } // namespace triangles_gpu
+
+
+GpuMemoryPool::~GpuMemoryPool() {
+    for (auto ptr : allocations_) {
+        CUDA_CHECK(cudaFree(ptr));
+    }
+}
+
+void *GpuMemoryPool::alloc(size_t size) {
+    if (next_idx_ < allocations_.size()) {
+        auto idx = next_idx_++;
+        if (size > capacities_.at(idx)) {
+            CUDA_CHECK(cudaFree(allocations_.at(idx)));
+            CUDA_CHECK(cudaMalloc(&allocations_.at(idx), size));
+            CUDA_CHECK(cudaMemset(allocations_.at(idx), 0, size));
+            capacities_.at(idx) = size;
+        }
+        return allocations_.at(idx);
+    } else {
+        void *ptr;
+        CUDA_CHECK(cudaMalloc(&ptr, size));
+        CUDA_CHECK(cudaMemset(ptr, 0, size));
+        allocations_.push_back(ptr);
+        capacities_.push_back(size);
+        next_idx_++;
+        return ptr;
+    }
+}
+
+void GpuMemoryPool::reset() {
+    next_idx_ = 0;
+    for (int32_t i = 0; i < allocations_.size(); i++) {
+        CUDA_CHECK(cudaMemset(allocations_.at(i), 0, capacities_.at(i)));
+    }
+}
