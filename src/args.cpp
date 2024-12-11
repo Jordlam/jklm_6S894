@@ -26,7 +26,8 @@ void Args::get_args(
     vertex_x = (float*)malloc(sizeof(float) * n_triangle * 3);
     vertex_y = (float*)malloc(sizeof(float) * n_triangle * 3);
     vertex_z = (float*)malloc(sizeof(float) * n_triangle * 3);
-    z_buffer = (float*)malloc(sizeof(float) * width * height);
+    // z_buffer = (float*)malloc(sizeof(float) * width * height);
+    z_buffer = (float*)malloc(sizeof(float) * 3520 * 3520);
 
     triangle_red = (float*)malloc(sizeof(float) * n_triangle);
     triangle_green = (float*)malloc(sizeof(float) * n_triangle);

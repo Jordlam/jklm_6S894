@@ -446,6 +446,8 @@ __global__ void map_tiles_to_triangles(
                 uint32_t tile_index = tile_y * num_tiles_x + tile_x;
                 uint32_t prefix_sum_index = tile_index * ((n_triangle + group_size - 1) / group_size) + global_index;
                 uint32_t write_offset = per_tile_prefix_sum[prefix_sum_index];
+
+
                 per_tile_prefix_sum[prefix_sum_index] = write_offset + 1;
                 uint32_t one_dim = tile_allocation_size * tile_index + write_offset;
                 tiles_to_triangles[one_dim] = i;
@@ -485,6 +487,10 @@ __global__ void draw_triangles(
     uint32_t tile_triangles_start = tile_index * max_triangles_per_tile;
 
     int32_t pixel_idx = y * WIDTH + x;
+
+    if (pixel_idx >= 1024 * 1024) { return; }
+
+
     for (int i = tile_triangles_start;
          (i < tile_triangles_start + max_triangles_per_tile) && (map[i] < n_triangle);
          ++i
@@ -516,15 +522,25 @@ __global__ void draw_triangles(
         );
 
         Point2D pixel({static_cast<int>(x), static_cast<int>(y)});
-        if (
-            point_inside_triangle(screen_triangle, pixel)
-            && pixel_visible_update<WIDTH, HEIGHT>(
-                screen_triangle,
-                pixel,
-                z_coords,
-                z_buffer
-            )
+
+        bool o = point_inside_triangle(screen_triangle, pixel);
+        bool b = pixel_visible_update<WIDTH, HEIGHT>(
+            screen_triangle,
+            pixel,
+            z_coords,
+            z_buffer
+        );
+
+        if (o && b
+            // point_inside_triangle(screen_triangle, pixel)
+            // && pixel_visible_update<WIDTH, HEIGHT>(
+            //     screen_triangle,
+            //     pixel,
+            //     z_coords,
+            //     z_buffer
+            // )
         ) {
+
             Triangle3D world_triangle(
                 world_triangle_vertices[0],
                 world_triangle_vertices[1],
@@ -537,15 +553,17 @@ __global__ void draw_triangles(
             Point3D light_direction({0.0, 0.0, -1.0});
             float light_intensity = norm.dot(light_direction);
             if (light_intensity > 0) {
-                pixel_intensity[pixel_idx] = 255 * light_intensity;
+                float adjusted_value = 255.0f * light_intensity;
+                // printf("Here123: %i", pixel_idx);
+                pixel_intensity[pixel_idx] = adjusted_value;
             }
         }
     }
 }
 
 void launch_render(GpuMemoryPool &memory_pool) {
-    constexpr uint32_t width = 3520;
-    constexpr uint32_t height = 3520;
+    constexpr uint32_t width = 1024;
+    constexpr uint32_t height = 1024;
     constexpr uint32_t num_pixels = width * height;
 
     // Get buffers
@@ -560,220 +578,263 @@ void launch_render(GpuMemoryPool &memory_pool) {
     // Allocate device memory.
     uint32_t vertices_size = sizeof(int32_t) * n_triangle * 3;
     uint32_t vertex_dim = sizeof(float) * n_triangle * 3;
-    int32_t* vertices_d = (int32_t*)memory_pool.alloc(vertices_size);
-    float* vertex_x_d = (float*)memory_pool.alloc(vertex_dim);
-    float* vertex_y_d = (float*)memory_pool.alloc(vertex_dim);
-    float* vertex_z_d = (float*)memory_pool.alloc(vertex_dim);
-    float* light_intensity_d = (float*)memory_pool.alloc(num_pixels * sizeof(float));
+    // int32_t* vertices_d = (int32_t*)memory_pool.alloc(vertices_size);
+    // float* vertex_x_d = (float*)memory_pool.alloc(vertex_dim);
+    // float* vertex_y_d = (float*)memory_pool.alloc(vertex_dim);
+    // float* vertex_z_d = (float*)memory_pool.alloc(vertex_dim);
+    // float* light_intensity_d = (float*)memory_pool.alloc(num_pixels * sizeof(float));
 
-    float* z_buffer_d = (float*)memory_pool.alloc(sizeof(float) * num_pixels);
+    // float* z_buffer_d = (float*)memory_pool.alloc(sizeof(float) * num_pixels);
+
+    int32_t* vertices_d = nullptr;
+    int x = cudaMalloc(&vertices_d, vertices_size);
+    printf("1: %i\n", x);
+    
+    float* vertex_x_d = nullptr;
+    x = cudaMalloc(&vertex_x_d, vertex_dim);
+    printf("1: %i\n", x);
+    
+    float* vertex_y_d = nullptr;
+    x = cudaMalloc(&vertex_y_d, vertex_dim);
+    printf("1: %i\n", x);
+    
+    float* vertex_z_d = nullptr;
+    x = cudaMalloc(&vertex_z_d, vertex_dim);
+    printf("1: %i\n", x);
+
+    float* light_intensity_d = nullptr;
+    x = cudaMalloc(&light_intensity_d, num_pixels * sizeof(float));
+    printf("1: %i\n", x);
+
+    float* z_buffer_d = nullptr;
+    x = cudaMalloc(&z_buffer_d, sizeof(float) * num_pixels);
+    printf("1: %i\n", x);
+
 
     float *z_buffer_h = new float[num_pixels];
     for (int i = 0; i < num_pixels; ++i) {
         z_buffer_h[i] = std::numeric_limits<float>::lowest();
     }
 
-    // cudaMemcpy(
-    //     z_buffer_d,
-    //     z_buffer_h.data(),
-    //     num_pixels * sizeof(float),
-    //     cudaMemcpyHostToDevice
-    // );
+    cudaMemcpy(
+        z_buffer_d,
+        z_buffer_h,
+        num_pixels * sizeof(float),
+        cudaMemcpyHostToDevice
+    );
 
-    // // Copy to device memory.
-    // CUDA_CHECK(cudaMemcpy(
-    //     vertices_d,
-    //     &args.vertices,
-    //     vertices_size, // number of bytes to copy
-    //     cudaMemcpyHostToDevice
-    // ));
+    // Copy to device memory.
+    CUDA_CHECK(cudaMemcpy(
+        vertices_d,
+        args.vertices,
+        vertices_size, // number of bytes to copy
+        cudaMemcpyHostToDevice
+    ));
 
-    // CUDA_CHECK(cudaMemcpy(
-    //     vertex_x_d,
-    //     &args.vertex_x,
-    //     vertex_dim, // number of bytes to copy
-    //     cudaMemcpyHostToDevice
-    // ));
+    CUDA_CHECK(cudaMemcpy(
+        vertex_x_d,
+        args.vertex_x,
+        vertex_dim, // number of bytes to copy
+        cudaMemcpyHostToDevice
+    ));
 
-    // CUDA_CHECK(cudaMemcpy(
-    //     vertex_y_d,
-    //     &args.vertex_y,
-    //     vertex_dim, // number of bytes to copy
-    //     cudaMemcpyHostToDevice
-    // ));
+    CUDA_CHECK(cudaMemcpy(
+        vertex_y_d,
+        args.vertex_y,
+        vertex_dim, // number of bytes to copy
+        cudaMemcpyHostToDevice
+    ));
 
-    // CUDA_CHECK(cudaMemcpy(
-    //     vertex_z_d,
-    //     &args.vertex_z,
-    //     vertex_dim, // number of bytes to copy
-    //     cudaMemcpyHostToDevice
-    // ));
+    CUDA_CHECK(cudaMemcpy(
+        vertex_z_d,
+        args.vertex_z,
+        vertex_dim, // number of bytes to copy
+        cudaMemcpyHostToDevice
+    )); 
 
-    // Args *device_args = (Args*)memory_pool.alloc(sizeof(Args));
-
-    // device_args->vertices = vertices_d;
-    // device_args->vertex_x = vertex_x_d;
-    // device_args->vertex_y = vertex_y_d;
-    // device_args->vertex_z = vertex_z_d;
-    // device_args->pixel_intensity = light_intensity_d;
-    // device_args->z_buffer = z_buffer_d;
-
-    // constexpr uint32_t GROUP_SIZE = 1;
-    // constexpr uint32_t C_NUM_THREADS = 32 * 16;
-    // constexpr uint32_t ELEMENTS_PER_BLOCK = GROUP_SIZE * C_NUM_THREADS;
-    // uint32_t c_num_blocks = (n_triangle + ELEMENTS_PER_BLOCK - 1) / ELEMENTS_PER_BLOCK;
-    // uint32_t num_tiles_x = ((width + TILE_SIZE - 1) >> TILE_LOG);
-    // uint32_t num_tiles_y = ((height + TILE_SIZE - 1) >> TILE_LOG);
-    // uint32_t num_tiles = num_tiles_x * num_tiles_y;
-    // size_t counters_size_in_bytes = sizeof(uint32_t) * num_tiles * c_num_blocks;
-    // size_t counters_size = counters_size_in_bytes / sizeof(uint32_t);
-    // uint32_t *counters_d = reinterpret_cast<uint32_t *>(memory_pool.alloc(counters_size_in_bytes));
+    constexpr uint32_t GROUP_SIZE = 1;
+    constexpr uint32_t C_NUM_THREADS = 32 * 16;
+    constexpr uint32_t ELEMENTS_PER_BLOCK = GROUP_SIZE * C_NUM_THREADS;
+    uint32_t c_num_blocks = (n_triangle + ELEMENTS_PER_BLOCK - 1) / ELEMENTS_PER_BLOCK;
+    uint32_t num_tiles_x = ((width + TILE_SIZE - 1) >> TILE_LOG);
+    uint32_t num_tiles_y = ((height + TILE_SIZE - 1) >> TILE_LOG);
+    uint32_t num_tiles = num_tiles_x * num_tiles_y;
+    size_t counters_size_in_bytes = sizeof(uint32_t) * num_tiles * c_num_blocks;
+    size_t counters_size = counters_size_in_bytes / sizeof(uint32_t);
+    uint32_t *counters_d = reinterpret_cast<uint32_t *>(memory_pool.alloc(counters_size_in_bytes));
 
     // Timer t;
 
-    // // MARK: Count how many triangles in each block belong to each tile.
+    // MARK: Count how many triangles in each block belong to each tile.
 
     // t.start();
-    // uint32_t shmem_size = num_tiles * sizeof(uint32_t);
-    // block_count_triangles_per_tile<<<c_num_blocks, C_NUM_THREADS, shmem_size>>>(
-    //     width,
-    //     height,
+    uint32_t shmem_size = num_tiles * sizeof(uint32_t);
 
-    //     args.n_triangle,
-    //     vertices_d,
-    //     vertex_x_d,
-    //     vertex_y_d,
-    //     vertex_z_d,
+    // printf("c_num_blocks: %i, c_num_threads: %i, shmem_size: %i\n", c_num_blocks, C_NUM_THREADS, shmem_size);
+    block_count_triangles_per_tile<<<c_num_blocks, C_NUM_THREADS, shmem_size>>>(
+        width,
+        height,
+
+        args.n_triangle,
+        vertices_d,
+        vertex_x_d,
+        vertex_y_d,
+        vertex_z_d,
         
-    //     counters_d
-    // );
+        counters_d
+    );
+
+    // printf("After123\n");
+
+    uint32_t *counters_h = (uint32_t *)malloc(counters_size_in_bytes);
+
+    CUDA_CHECK(cudaMemcpy(
+        counters_h, // pointer to CPU memory
+        counters_d, // pointer to GPU memory
+        counters_size_in_bytes, // number of bytes to copy
+        cudaMemcpyDeviceToHost
+    ));
+
     // t.stop("Counter time:");
 
-    // // MARK: Prefix scan to find out how many triangles in total belong to each tile.
+    // MARK: Prefix scan to find out how many triangles in total belong to each tile.
 
     // t.start();
 
-    // // Get memory locations and initialize max values.
-    // uint32_t most_triangles_in_tile_h = 0;
+    // Get memory locations and initialize max values.
+    uint32_t most_triangles_in_tile_h = 0;
     // uint32_t *most_triangles_in_tile_d =
     // reinterpret_cast<uint32_t *>(memory_pool.alloc(sizeof(most_triangles_in_tile_h)));
-    // CUDA_CHECK(cudaMemcpy(
-    //     most_triangles_in_tile_d,
-    //     &most_triangles_in_tile_h,
-    //     sizeof(uint32_t), // number of bytes to copy
-    //     cudaMemcpyHostToDevice
-    // ));
+    uint32_t *most_triangles_in_tile_d = nullptr;
+    x = cudaMalloc(&most_triangles_in_tile_d, sizeof(most_triangles_in_tile_h));
+    
 
-    // // TODO: Figure out why the optimal number for `scan_threads` is so low.
-    // uint32_t scan_threads = 32 * 1;
-    // uint32_t scan_per_block = scan_threads * c_num_blocks;
-    // uint32_t scan_blocks = (counters_size + scan_per_block - 1) / scan_per_block;
-    // prefix_sum_and_max_tile_counts<<<scan_blocks, scan_threads>>>(
-    //     width,
-    //     height,
-    //     counters_d,
-    //     counters_size,
-    //     c_num_blocks,
-    //     most_triangles_in_tile_d);
+    CUDA_CHECK(cudaMemcpy(
+        most_triangles_in_tile_d,
+        &most_triangles_in_tile_h,
+        sizeof(uint32_t), // number of bytes to copy
+        cudaMemcpyHostToDevice
+    ));
 
-    // CUDA_CHECK(cudaMemcpy(
-    //     &most_triangles_in_tile_h, // pointer to CPU memory
-    //     most_triangles_in_tile_d, // pointer to GPU memory
-    //     sizeof(uint32_t), // number of bytes to copy
-    //     cudaMemcpyDeviceToHost
-    // ));
+
+    // TODO: Figure out why the optimal number for `scan_threads` is so low.
+    uint32_t scan_threads = 32 * 1;
+    uint32_t scan_per_block = scan_threads * c_num_blocks;
+    uint32_t scan_blocks = (counters_size + scan_per_block - 1) / scan_per_block;
+    prefix_sum_and_max_tile_counts<<<scan_blocks, scan_threads>>>(
+        width,
+        height,
+        counters_d,
+        counters_size,
+        c_num_blocks,
+        most_triangles_in_tile_d);
+
+    CUDA_CHECK(cudaMemcpy(
+        &most_triangles_in_tile_h, // pointer to CPU memory
+        most_triangles_in_tile_d, // pointer to GPU memory
+        sizeof(uint32_t), // number of bytes to copy
+        cudaMemcpyDeviceToHost
+    ));
 
     // t.stop("Scan time:");
 
     // t.start();
 
-    // uint32_t map_size_bytes = most_triangles_in_tile_h * num_tiles * sizeof(uint32_t);
-    // uint32_t *map = reinterpret_cast<uint32_t *>(memory_pool.alloc(map_size_bytes));
-    // // Timer t;
-    // // t.start();
-    // cudaMemset(static_cast<void *>(map), 0xFF, map_size_bytes);
-    // // t.stop("Test");
-    // uint32_t map_threads = 32 * 4;
-    // uint32_t map_elements_per_block = map_threads * ELEMENTS_PER_BLOCK;
-    // uint32_t map_blocks = (n_triangle + map_elements_per_block - 1) / map_elements_per_block;
-    // map_tiles_to_triangles<<<map_blocks, map_threads>>>(
-    //     width,
-    //     height,
+    uint32_t map_size_bytes = most_triangles_in_tile_h * num_tiles * sizeof(uint32_t);
+    uint32_t *map = reinterpret_cast<uint32_t *>(memory_pool.alloc(map_size_bytes));
+    // Timer t;
+    // t.start();
+    cudaMemset(static_cast<void *>(map), 0xFF, map_size_bytes);
+    // t.stop("Test");
+    uint32_t map_threads = 32 * 4;
+    uint32_t map_elements_per_block = map_threads * ELEMENTS_PER_BLOCK;
+    uint32_t map_blocks = (n_triangle + map_elements_per_block - 1) / map_elements_per_block;
 
-    //     args.n_triangle,
-    //     vertices_d,
-    //     vertex_x_d,
-    //     vertex_y_d,
-    //     vertex_z_d,
+    map_tiles_to_triangles<<<map_blocks, map_threads>>>(
+        width,
+        height,
 
-    //     counters_d,
-    //     map,
-    //     most_triangles_in_tile_h,
+        args.n_triangle,
+        vertices_d,
+        vertex_x_d,
+        vertex_y_d,
+        vertex_z_d,
 
-    //     ELEMENTS_PER_BLOCK
-    // );
+        counters_d,
+        map,
+        most_triangles_in_tile_h,
 
-    // // gpu_print<<<1,1>>>(map, map_size_bytes >> 2, most_triangles_in_tile_h);
+        ELEMENTS_PER_BLOCK
+    );
+
+    // gpu_print<<<1,1>>>(map, map_size_bytes >> 2, most_triangles_in_tile_h);
     // t.stop("Tile to blocks time:");
 
     // t.start();
-    // draw_triangles<width, height><<<dim3(num_tiles_x, num_tiles_y), dim3(TILE_SIZE, TILE_SIZE)>>>(
-    //     args.n_triangle,
-    //     vertices_d,
-    //     vertex_x_d,
-    //     vertex_y_d,
-    //     vertex_z_d,
-    //     z_buffer_d,
-    //     light_intensity_d,
+    draw_triangles<width, height><<<dim3(num_tiles_x, num_tiles_y), dim3(TILE_SIZE, TILE_SIZE)>>>(
+        args.n_triangle,
+        vertices_d,
+        vertex_x_d,
+        vertex_y_d,
+        vertex_z_d,
+        z_buffer_d,
+        light_intensity_d,
 
-    //     map,
-    //     most_triangles_in_tile_h
-    // );
+        map,
+        most_triangles_in_tile_h
+    );
 
-
-    // float* light_values_h = new float[num_pixels];
-    // CUDA_CHECK(cudaMemcpy(
-    //     light_values_h,
-    //     light_intensity_d,
-    //     num_pixels * sizeof(float), // number of bytes to copy
-    //     cudaMemcpyDeviceToHost
-    // ));
-
-
-    // for (int y = 0; y < height; ++y) {
-    //     for (int x = 0; x < width; ++x) {
-    //         uint32_t pixel_one_dim = y * width + x;
-    //         float light_value = light_values_h[pixel_one_dim];
-    //         TGAColor color(
-    //             light_value,
-    //             light_value,
-    //             light_value,
-    //             255
-    //         );
-
-    //         args.img.set(x, y, color);
-    //     }
-    // }
+    // return;
+    
+    float* light_values_h = new float[num_pixels];
+    cudaMemcpy(
+        light_values_h,
+        light_intensity_d,
+        num_pixels * sizeof(float), // number of bytes to copy
+        cudaMemcpyDeviceToHost
+    );
 
 
-    // args.img.write_tga_file("out/framebuffer.tga");
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            uint32_t pixel_one_dim = y * width + x;
+            float light_value = light_values_h[pixel_one_dim];
+            if (pixel_one_dim < 100) {
+                printf("Light value: %f\n", light_value);
+            }
+            TGAColor color(
+                light_value,
+                light_value,
+                light_value,
+                255
+            );
 
-    // // std::cout << num_tiles
+            args.img.set(x, y, color);
+        }
+    }
+
+
+    args.img.write_tga_file("out/framebuffer.tga");
+
+    // std::cout << num_tiles
     // t.stop("Draw");
 
-    // // printf("\n-----------------------\n");
+    // printf("\n-----------------------\n");
 
     // DO NOT DELETE.
     args.clean_args();
+    delete light_values_h;
+    delete z_buffer_h;
+
 }
 
 // } // namespace triangles_gpu
 
 
 GpuMemoryPool::~GpuMemoryPool() {
-    for (auto ptr : allocations_) {
-        CUDA_CHECK(cudaFree(ptr));
-    }
+    // for (auto ptr : allocations_) {
+    //     CUDA_CHECK(cudaFree(ptr));
+    // }
 }
 
 void *GpuMemoryPool::alloc(size_t size) {
