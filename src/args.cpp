@@ -1,8 +1,8 @@
 #include "args.h"
-#include "cpu_rasterizer.h"
+// #include "cpu_rasterizer.h"
 
-using Triangle2D = Triangle<Point2D>;
-using Triangle3D = Triangle<Point3D>;
+// using Triangle2D = Triangle<Point2D>;
+// // using Triangle3D = Triangle<Point3D>;
 
 void Args::get_args(
     const std::string &obj_file,
@@ -38,7 +38,7 @@ void Args::get_args(
     tinyobj::attrib_t attrib = model.get_attrib();
     tinyobj::shape_t shape = model.get_shape(0);
     for (int t = 0; t < n_triangle; t++) {
-        std::array<Point3D, 3> world_triangle_vertices;
+        // std::array<Point3D, 3> world_triangle_vertices;
         for (int v = 0; v < 3; v++) {
             int v_idx = shape.mesh.indices[3 * t + v].vertex_index;
             vertices[3 * t + v] = v_idx;
@@ -48,25 +48,25 @@ void Args::get_args(
             vertex_x[v_idx] = x;
             vertex_y[v_idx] = y;
             vertex_z[v_idx] = z;
-            world_triangle_vertices[v] = Point3D({
-                static_cast<float>(x),
-                static_cast<float>(y),
-                static_cast<float>(z)
-            });
+            // world_triangle_vertices[v] = Point3D({
+            //     static_cast<float>(x),
+            //     static_cast<float>(y),
+            //     static_cast<float>(z)
+            // });
         }
-        // All of this for light value
-        Triangle3D world_triangle(
-            world_triangle_vertices[0],
-            world_triangle_vertices[1],
-            world_triangle_vertices[2]
-        );
-        Point3D norm = world_triangle.normal();
-        Point3D light_direction({(float)light_dir.x, (float)light_dir.y, (float)light_dir.z});
-        float light_intensity = norm.dot(light_direction);
-        triangle_red[t] = 255 * light_intensity;
-        triangle_green[t] = 255 * light_intensity;
-        triangle_blue[t] = 255 * light_intensity;
-        triangle_alpha[t] = (float)255;
+        // // All of this for light value
+        // Triangle3D world_triangle(
+        //     world_triangle_vertices[0],
+        //     world_triangle_vertices[1],
+        //     world_triangle_vertices[2]
+        // );
+        // Point3D norm = world_triangle.normal();
+        // Point3D light_direction({(float)light_dir.x, (float)light_dir.y, (float)light_dir.z});
+        // float light_intensity = norm.dot(light_direction);
+        // triangle_red[t] = 255 * light_intensity;
+        // triangle_green[t] = 255 * light_intensity;
+        // triangle_blue[t] = 255 * light_intensity;
+        // triangle_alpha[t] = (float)255;
     }
     return;
 }

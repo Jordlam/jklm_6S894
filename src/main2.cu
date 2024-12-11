@@ -18,7 +18,7 @@
 
 
 // #include "cpu_rasterizer.h"
-// #include "args.h"
+#include "args.h"
 
 
 
@@ -154,17 +154,25 @@ struct Timer {
 ////////////////////////////////////////////////////////////////////////////////
 // Optimized GPU Implementation
 
-namespace triangles_gpu {
+// namespace triangles_gpu {
 constexpr uint32_t TILE_LOG = 4;
 constexpr uint32_t TILE_SIZE = 1 << TILE_LOG;
 
-__device__ cuda::std::array<Point3D, 3> get_triangle(int i, Args *args) {
-    int32_t v0_idx = args->vertices[3*i + 0];
-    int32_t v1_idx = args->vertices[3*i + 1];
-    int32_t v2_idx = args->vertices[3*i + 2];
-    Point3D point0({args->vertex_x[v0_idx], args->vertex_y[v0_idx], args->vertex_z[v0_idx]});
-    Point3D point1({args->vertex_x[v1_idx], args->vertex_y[v1_idx], args->vertex_z[v1_idx]});
-    Point3D point2({args->vertex_x[v2_idx], args->vertex_y[v2_idx], args->vertex_z[v2_idx]});
+__device__ cuda::std::array<Point3D, 3> get_triangle(
+    int i,
+    int32_t* vertices,
+    float *vertex_x,
+    float *vertex_y,
+    float *vertex_z
+) {
+    int32_t v0_idx = vertices[3*i + 0];
+    int32_t v1_idx = vertices[3*i + 1];
+    int32_t v2_idx = vertices[3*i + 2];
+
+    Point3D point0({vertex_x[v0_idx], vertex_y[v0_idx], vertex_z[v0_idx]});
+    Point3D point1({vertex_x[v1_idx], vertex_y[v1_idx], vertex_z[v1_idx]});
+    Point3D point2({vertex_x[v2_idx], vertex_y[v2_idx], vertex_z[v2_idx]});
+
     return {point0, point1, point2};
 }
 
@@ -248,15 +256,19 @@ template<uint32_t GROUP_SIZE = 1>
 __global__ void block_count_triangles_per_tile(
     int32_t width,
     int32_t height,
-    Args *args,
+    
+    int32_t n_triangle,
+    int32_t *vertices,
+    float *vertex_x,
+    float *vertex_y,
+    float *vertex_z,
+
     // int32_t n_triangle,
     // float const *triangle_x,      // pointer to GPU memory
     // float const *triangle_y,      // pointer to GPU memory
     // float const *triangle_radius, // pointer to GPU memory
     uint32_t *global_counts
 ) {
-    uint32_t n_triangle = args->n_triangle;
-
     extern __shared__ uint32_t shmem_tile_counts[];
 
     // Initialize `shmem_tile_counts` to zero.
@@ -272,7 +284,7 @@ __global__ void block_count_triangles_per_tile(
     // Count how many of the triangles (that this block is responsible for) belong to each tile.
     uint32_t block_start = blockIdx.x * blockDim.x * GROUP_SIZE;
     for (uint32_t i = block_start + threadIdx.x; i < min(block_start + (blockDim.x * GROUP_SIZE), n_triangle); i += blockDim.x) {
-        cuda::std::array<Point3D, 3> world_vertices = get_triangle(i, args);
+        cuda::std::array<Point3D, 3> world_vertices = get_triangle(i, vertices, vertex_x, vertex_y, vertex_z);
 
         // Project to 2D.
         cuda::std::array<Point2D, 3> screen_triangle_vertices;
@@ -347,7 +359,12 @@ __global__ void map_tiles_to_triangles(
     uint32_t height,
 
     // Triangle stuff.
-    Args *args,
+    int32_t n_triangle,
+    int32_t *vertices,
+    float *vertex_x,
+    float *vertex_y,
+    float *vertex_z,
+
 
     // Metadata and output.
     uint32_t *per_tile_prefix_sum,
@@ -357,8 +374,6 @@ __global__ void map_tiles_to_triangles(
     // Launch parameters.
     uint32_t group_size
 ) {
-    uint32_t n_triangle = args->n_triangle;
-
     // Initialize `shmem_tile_counts` to zero.
     uint32_t num_tiles_x = (width + TILE_SIZE - 1) >> TILE_LOG;
     // uint32_t num_tiles_y = (height + TILE_SIZE - 1) >> TILE_LOG;
@@ -369,7 +384,7 @@ __global__ void map_tiles_to_triangles(
     if (thread_start >= n_triangle) { return; }
 
     for (uint32_t i = thread_start; i < min(thread_start + group_size, n_triangle); ++i) {
-        cuda::std::array<Point3D, 3> world_vertices = get_triangle(i, args);
+        cuda::std::array<Point3D, 3> world_vertices = get_triangle(i, vertices, vertex_x, vertex_y, vertex_z);
 
         // Project to 2D.
         cuda::std::array<Point2D, 3> screen_triangle_vertices;
@@ -423,7 +438,14 @@ __global__ void gpu_print(uint32_t *map, uint32_t num, uint32_t tile_size) {
 
 template<uint32_t WIDTH, uint32_t HEIGHT>
 __global__ void draw_triangles(
-    Args *args,
+    int32_t n_triangle,
+    int32_t *vertices,
+    float *vertex_x,
+    float *vertex_y,
+    float *vertex_z,
+    float *z_buffer,
+    float *pixel_intensity,
+
     uint32_t *map,
     uint32_t max_triangles_per_tile
 ) {
@@ -435,10 +457,10 @@ __global__ void draw_triangles(
 
     int32_t pixel_idx = y * WIDTH + x;
     for (int i = tile_triangles_start;
-         (i < tile_triangles_start + max_triangles_per_tile) && (map[i] < args->n_triangle);
+         (i < tile_triangles_start + max_triangles_per_tile) && (map[i] < n_triangle);
          ++i
     ) {
-        cuda::std::array<Point3D, 3> world_vertices = get_triangle(i, args);
+        cuda::std::array<Point3D, 3> world_vertices = get_triangle(i, vertices, vertex_x, vertex_y, vertex_z);
 
         // Project to 2D and save z-coordinate.
         cuda::std::array<Point3D, 3> world_triangle_vertices;
@@ -471,7 +493,7 @@ __global__ void draw_triangles(
                 screen_triangle,
                 pixel,
                 z_coords,
-                args->z_buffer
+                z_buffer
             )
         ) {
             Triangle3D world_triangle(
@@ -486,15 +508,15 @@ __global__ void draw_triangles(
             Point3D light_direction({0.0, 0.0, -1.0});
             float light_intensity = norm.dot(light_direction);
             if (light_intensity > 0) {
-                args->pixel_intensity[pixel_idx] = 255 * light_intensity;
+                pixel_intensity[pixel_idx] = 255 * light_intensity;
             }
         }
     }
 }
 
 void launch_render(GpuMemoryPool &memory_pool) {
-    constexpr uint32_t width = 3500;
-    constexpr uint32_t height = 3500;
+    constexpr uint32_t width = 3520;
+    constexpr uint32_t height = 3520;
     constexpr uint32_t num_pixels = width * height;
 
     // Get buffers
@@ -558,14 +580,14 @@ void launch_render(GpuMemoryPool &memory_pool) {
         cudaMemcpyHostToDevice
     ));
 
-    Args *device_args = (Args*)memory_pool.alloc(sizeof(Args));
+    // Args *device_args = (Args*)memory_pool.alloc(sizeof(Args));
 
-    device_args->vertices = vertices_d;
-    device_args->vertex_x = vertex_x_d;
-    device_args->vertex_y = vertex_y_d;
-    device_args->vertex_z = vertex_z_d;
-    device_args->pixel_intensity = light_intensity_d;
-    device_args->z_buffer = z_buffer_d;
+    // device_args->vertices = vertices_d;
+    // device_args->vertex_x = vertex_x_d;
+    // device_args->vertex_y = vertex_y_d;
+    // device_args->vertex_z = vertex_z_d;
+    // device_args->pixel_intensity = light_intensity_d;
+    // device_args->z_buffer = z_buffer_d;
 
     constexpr uint32_t GROUP_SIZE = 1;
     constexpr uint32_t C_NUM_THREADS = 32 * 16;
@@ -587,7 +609,13 @@ void launch_render(GpuMemoryPool &memory_pool) {
     block_count_triangles_per_tile<<<c_num_blocks, C_NUM_THREADS, shmem_size>>>(
         width,
         height,
-        device_args,
+
+        args.n_triangle,
+        vertices_d,
+        vertex_x_d,
+        vertex_y_d,
+        vertex_z_d,
+        
         counters_d
     );
     t.stop("Counter time:");
@@ -643,7 +671,11 @@ void launch_render(GpuMemoryPool &memory_pool) {
         width,
         height,
 
-        device_args,
+        args.n_triangle,
+        vertices_d,
+        vertex_x_d,
+        vertex_y_d,
+        vertex_z_d,
 
         counters_d,
         map,
@@ -657,19 +689,23 @@ void launch_render(GpuMemoryPool &memory_pool) {
 
     t.start();
     draw_triangles<width, height><<<dim3(num_tiles_x, num_tiles_y), dim3(TILE_SIZE, TILE_SIZE)>>>(
-        device_args,
+        args.n_triangle,
+        vertices_d,
+        vertex_x_d,
+        vertex_y_d,
+        vertex_z_d,
+        z_buffer_d,
+        light_intensity_d,
+
         map,
         most_triangles_in_tile_h
     );
 
 
-
-
-
     float* light_values_h = new float[num_pixels];
     CUDA_CHECK(cudaMemcpy(
         light_values_h,
-        &device_args->pixel_intensity,
+        light_intensity_d,
         num_pixels * sizeof(float), // number of bytes to copy
         cudaMemcpyDeviceToHost
     ));
@@ -702,4 +738,4 @@ void launch_render(GpuMemoryPool &memory_pool) {
     args.clean_args();
 }
 
-} // namespace triangles_gpu
+// } // namespace triangles_gpu
