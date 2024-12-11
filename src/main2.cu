@@ -803,3 +803,9 @@ void GpuMemoryPool::reset() {
         CUDA_CHECK(cudaMemset(allocations_.at(i), 0, capacities_.at(i)));
     }
 }
+
+int main() {
+    auto memory_pool = GpuMemoryPool();
+    launch_render(memory_pool);
+    return 0;
+}
